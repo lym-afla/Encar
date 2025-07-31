@@ -287,9 +287,9 @@ class EncarMonitorAPI:
             self.logger.error(f"❌ Error getting system status: {e}")
             return {'error': str(e)}
     
-    def print_status(self):
+    async def print_status(self):
         """Print current system status"""
-        asyncio.run(self._print_status_async())
+        await self._print_status_async()
     
     async def _print_status_async(self):
         """Async version of print status"""
@@ -442,7 +442,7 @@ def main():
         asyncio.run(test_api_monitor())
     elif args.mode == 'status':
         monitor = EncarMonitorAPI(args.config)
-        monitor.print_status()
+        asyncio.run(monitor.print_status())
     else:  # start
         monitor = EncarMonitorAPI(args.config)
         asyncio.run(monitor.start_monitoring())

@@ -218,9 +218,13 @@ class EncarScraperAPI:
                 browser = await p.chromium.launch(headless=True)
                 page = await browser.new_page()
                 
-                # Navigate to the page
-                await page.goto(listing_url, wait_until='networkidle')
-                await page.wait_for_timeout(3000)
+                # Navigate to the page with better error handling
+                try:
+                    await page.goto(listing_url, wait_until='domcontentloaded', timeout=30000)
+                    await page.wait_for_timeout(3000)
+                except Exception as e:
+                    self.logger.warning(f"Navigation timeout for {listing_url}: {e}")
+                    return 0, None, None
                 
                 views = 0
                 registration_date = None
@@ -459,7 +463,7 @@ async def test_api_scraper():
             print(f"   Title: {sample['title']}")
             print(f"   Year: {sample['year']}")
             print(f"   Price: {sample['price']:,}만원")
-            print(f"   URL: {sample['url']}")
+            print(f"   URL: {sample['listing_url']}")
             
             # Test enhanced data for first listing
             print("\n🔍 Testing enhanced data extraction...")

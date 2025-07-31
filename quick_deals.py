@@ -21,19 +21,19 @@ async def find_quick_deals(filter_type="sweet_spot", limit=5):
     async with EncarFilterTools() as filter_tools:
         
         if filter_type == "sweet_spot":
-            print("🎯 SWEET SPOT: 2020+, ≤6000만원, ≤80,000km")
+            print("🎯 SWEET SPOT: 2020+, ≤60 million won, ≤80,000km")
             listings, _ = await filter_tools.filter_sweet_spot(limit=limit)
             
         elif filter_type == "best_value":
-            print("💎 BEST VALUE: 2019+, ≤6000만원, ≤60,000km (sorted by value)")
+            print("💎 BEST VALUE: 2019+, ≤60 million won, ≤60,000km (sorted by value)")
             listings = await filter_tools.find_best_value(limit=limit, include_lease=False)
             
         elif filter_type == "best_value_all":
-            print("💎 BEST VALUE (INCLUDING LEASE): 2019+, ≤6000만원, ≤60,000km")
+            print("💎 BEST VALUE (INCLUDING LEASE): 2019+, ≤60 million won, ≤60,000km")
             listings = await filter_tools.find_best_value(limit=limit, include_lease=True)
             
         elif filter_type == "budget":
-            print("💰 BUDGET FRIENDLY: ≤5000만원")
+            print("💰 BUDGET FRIENDLY: ≤50 million won")
             listings, _ = await filter_tools.filter_budget_friendly(max_budget=5000, limit=limit)
             
         elif filter_type == "purchase_only":
@@ -53,7 +53,7 @@ async def find_quick_deals(filter_type="sweet_spot", limit=5):
             listings, _ = await filter_tools.filter_low_mileage(limit=limit)
             
         elif filter_type == "luxury":
-            print("✨ LUXURY: ≥8000만원")
+            print("✨ LUXURY: ≥80 million won")
             listings, _ = await filter_tools.filter_premium_range(min_price=8000, limit=limit)
             
         else:

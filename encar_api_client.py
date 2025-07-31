@@ -6,14 +6,11 @@ Extracts authentication from browser session and uses direct API calls
 
 import asyncio
 import aiohttp
-import json
 import logging
-import re
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
 from playwright.async_api import async_playwright
-import urllib.parse
-from monetary_utils import convert_manwon_to_won, parse_korean_price
+from monetary_utils import convert_manwon_to_won
 
 class EncarAPIClient:
     def __init__(self, config: dict):
@@ -304,7 +301,7 @@ class EncarAPIClient:
             car_id = str(item.get('Id', ''))
             model = item.get('Model', '')
             badge = item.get('Badge', '')
-            year = item.get('Year', 0)
+            year = item.get('Year', '')
             price_manwon = item.get('Price', 0)  # API returns prices in 만원
             mileage = item.get('Mileage', 0)
             
@@ -343,7 +340,7 @@ class EncarAPIClient:
                 'listing_url': listing_url,
                 'price': price_won,  # Original listed price in won
                 'true_price': true_price,  # True cost in won (higher for leases)
-                'year': year,
+                'year': str(year),
                 'mileage': mileage,
                 'model': model,
                 'badge': badge,
@@ -385,104 +382,14 @@ class EncarAPIClient:
         return False
     
     def detect_lease_vehicle(self, item: dict) -> bool:
-        """Detect if a vehicle is potentially under lease arrangement (basic heuristics)"""
-        # Manual override for known lease vehicles
-        car_id = str(item.get('Id', ''))
-        
-        # Known lease vehicles (from user reports)
-        known_lease_vehicles = {
-            '39743923': True,  # User's example lease vehicle
-        }
-        
-        if car_id in known_lease_vehicles:
-            return True
-        
-        # More aggressive heuristics since API doesn't have explicit lease fields
-        price = item.get('Price', 0)
-        year = item.get('Year', 0)
-        
-        # Convert year format (e.g., 202109.0 to 2021)
-        if isinstance(year, (int, float)) and year > 10000:
-            year = int(year / 100)  # 202109 -> 2021
-        
-        # Heuristic 1: Recent cars with moderate prices (potential lease candidates)
-        if year >= 2019:
-            # Look for cars that might be lease deals based on price patterns
-            if 3000 <= price <= 8000:
-                # Check for suspicious price patterns
-                price_str = str(int(price))
-                
-                # Prices ending in patterns like 77, 00, or having too many round numbers
-                if (price_str.endswith('77') or 
-                    price_str.endswith('00') or
-                    price % 100 == 0 or
-                    price % 500 == 0):
-                    # Additional check: if it's a newer car with moderate price, likely lease
-                    if year >= 2021 and price < 7000:
-                        return True
-        
-        # Heuristic 2: Check SellType field for potential lease indicators
-        sell_type = item.get('SellType', '')
-        if any(keyword in sell_type for keyword in ['리스', '렌트', '임대']):
-            return True
-        
-        # Heuristic 3: Very new cars (2023+) with moderate prices
-        if year >= 2023 and 4000 <= price <= 8000:
-            return True
-        
+        """Detect if a vehicle is likely a lease - DISABLED for API phase"""
+        # Disable lease detection during API phase - will be handled in Phase 2 with browser
         return False
     
     def extract_lease_info(self, item: dict) -> Optional[dict]:
-        """Extract lease terms and calculate true total cost"""
-        try:
-            car_id = str(item.get('Id', ''))
-            price_manwon = item.get('Price', 0)  # API returns prices in 만원
-            
-            # Manual override for known lease vehicles with accurate data
-            if car_id == '39743923':  # User's example
-                return {
-                    'needs_detail_scrape': False,
-                    'deposit': convert_manwon_to_won(3738),  # 37.38 million won
-                    'monthly_payment': convert_manwon_to_won(167),  # 1.67 million won
-                    'lease_term_months': 27,
-                    'total_monthly_cost': convert_manwon_to_won(167 * 27),  # 4509
-                    'total_cost': convert_manwon_to_won(3738 + (167 * 27))  # 8247
-                }
-            
-            # For other detected lease vehicles, provide reasonable estimates
-            year = item.get('Year', 0)
-            if isinstance(year, (int, float)) and year > 10000:
-                year = int(year / 100)
-            
-            # Estimate lease terms based on price and year (price is in 만원)
-            if year >= 2021:
-                # Newer cars - assume higher deposit, longer terms
-                estimated_deposit_manwon = price_manwon * 0.6  # 60% deposit
-                estimated_monthly_manwon = price_manwon * 0.03  # 3% monthly
-                estimated_term = 30  # 30 months
-            else:
-                # Older cars - assume lower deposit, shorter terms
-                estimated_deposit_manwon = price_manwon * 0.5  # 50% deposit
-                estimated_monthly_manwon = price_manwon * 0.025  # 2.5% monthly
-                estimated_term = 24  # 24 months
-            
-            # Convert to won amounts
-            estimated_deposit_won = convert_manwon_to_won(estimated_deposit_manwon)
-            estimated_monthly_won = convert_manwon_to_won(estimated_monthly_manwon)
-            estimated_total_won = estimated_deposit_won + (estimated_monthly_won * estimated_term)
-            
-            return {
-                'needs_detail_scrape': True,  # Still recommend detail scraping for accuracy
-                'deposit': estimated_deposit_won,
-                'monthly_payment': estimated_monthly_won,
-                'lease_term_months': estimated_term,
-                'total_monthly_cost': estimated_monthly_won * estimated_term,
-                'total_cost': estimated_total_won
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Error extracting lease info: {e}")
-            return None
+        """Extract lease terms and calculate true total cost - DISABLED for API phase"""
+        # Disable lease detection during API phase - will be handled in Phase 2 with browser
+        return None
     
     async def get_raw_api_data(self, limit: int = 5) -> List[Dict]:
         """Get raw API data without conversion (for testing)"""
