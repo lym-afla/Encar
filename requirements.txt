@@ -1,0 +1,12 @@
+requests==2.31.0
+beautifulsoup4==4.12.2
+playwright==1.40.0
+lxml==4.9.3
+pyyaml==6.0.1
+sqlite3
+schedule==1.2.0
+python-dotenv==1.0.0
+selenium==4.15.2
+pandas==2.1.4
+pytz==2023.3
+aiohttp==3.9.1
