@@ -221,7 +221,27 @@ class EncarScraperAPI:
                 # Navigate to the page with better error handling
                 try:
                     await page.goto(listing_url, wait_until='domcontentloaded', timeout=30000)
-                    await page.wait_for_timeout(3000)
+                    
+                    # Check if we're on a CAPTCHA page
+                    page_title = await page.title()
+                    if "reCAPTCHA" in page_title or "grecaptcha" in await page.content():
+                        self.logger.info("🛡️ CAPTCHA detected, waiting for verification...")
+                        
+                        # Wait for CAPTCHA to be solved and page to redirect
+                        try:
+                            # Wait for the page to change (CAPTCHA verification)
+                            await page.wait_for_function(
+                                'document.title && !document.title.includes("reCAPTCHA") && !document.querySelector(".grecaptcha-badge")',
+                                timeout=30000
+                            )
+                            self.logger.info("✅ CAPTCHA verification completed")
+                        except Exception as e:
+                            self.logger.warning(f"⚠️ CAPTCHA verification timeout: {e}")
+                            return 0, None, None
+                    
+                    # Additional wait for page to fully load
+                    await page.wait_for_timeout(5000)
+                    
                 except Exception as e:
                     self.logger.warning(f"Navigation timeout for {listing_url}: {e}")
                     return 0, None, None
@@ -257,14 +277,29 @@ class EncarScraperAPI:
                     modal_ul = None
                     try:
                         # First try the specific modal container
-                        modal_ul = await page.wait_for_selector('.DetailSpec_list_default__Gx+ZA', timeout=3000)
+                        modal_ul = await page.wait_for_selector('.BottomSheet-module_inner_contents__-vTmf', timeout=3000)
                     except:
                         # Fallback: look for any list in the modal
                         try:
-                            modal_ul = await page.wait_for_selector('.BottomSheet-module_inner_contents__-vTmf ul', timeout=2000)
+                            modal_ul = await page.wait_for_selector('.DetailSpec_list_default__Gx+ZA', timeout=2000)
                         except:
                             # Last resort: search all li elements in modal area
                             pass
+                    
+                    # If modal not found, try alternative approach
+                    if not modal_ul:
+                        self.logger.debug("Modal not found with standard selectors, trying alternative approach...")
+                        # Look for any ul elements that might contain the modal content
+                        all_ul_elements = await page.query_selector_all('ul')
+                        for ul in all_ul_elements:
+                            try:
+                                ul_text = await ul.inner_text()
+                                if "조회수" in ul_text:
+                                    modal_ul = ul
+                                    self.logger.debug("Found modal using alternative approach")
+                                    break
+                            except:
+                                continue
                     
                     # Get views from modal if not found on main page
                     if views == 0:
@@ -288,24 +323,57 @@ class EncarScraperAPI:
                                             views = int(views_str)
                                             self.logger.debug(f"Got views from modal: {views}")
                                     break
-                            except Exception as inner_e:
+                            except Exception:
                                 continue
                     
                     # Get registration date by clicking the question mark button
                     try:
-                        question_button = await page.wait_for_selector('button:has-text("조회수 자세히보기")', timeout=5000)
+                        # Try multiple selectors for the question mark button
+                        question_button = None
+                        question_selectors = [
+                            'button:has-text("조회수 자세히보기")',
+                            '.Icon_uiico_question__JxaTq',
+                        ]
+                        
+                        for selector in question_selectors:
+                            try:
+                                question_button = await page.wait_for_selector(selector, timeout=3000)
+                                if question_button:
+                                    self.logger.debug(f"Found question button with selector: {selector}")
+                                    break
+                            except:
+                                continue
+                        
                         if question_button:
                             await question_button.click()
                             await page.wait_for_timeout(2000)
                             
-                            # Extract registration date from tooltip
-                            tooltip_element = await page.wait_for_selector('.TooltipPopper_area__iKVzy', timeout=5000)
+                            # Try multiple tooltip selectors and check content
+                            tooltip_element = None
+                            tooltip_selectors = [
+                                '.TooltipPopper_area__iKVzy'
+                            ]
+                            
+                            for tooltip_selector in tooltip_selectors:
+                                try:
+                                    # Get all tooltip elements and check their content
+                                    tooltip_element = await page.query_selector(tooltip_selector)
+                                    # Look for tooltip that contains registration date info
+                                    if tooltip_element:
+                                        break
+                                except:
+                                    continue
+                            
                             if tooltip_element:
                                 tooltip_text = await tooltip_element.inner_text()
                                 date_match = re.search(r'최초등록일\s*(\d{4}/\d{2}/\d{2})', tooltip_text)
                                 if date_match:
                                     registration_date = date_match.group(1)
                                     self.logger.debug(f"Got registration date: {registration_date}")
+                                else:
+                                    self.logger.debug(f"Tooltip text: {tooltip_text[:200]}...")
+                            else:
+                                self.logger.debug("No registration tooltip found")
                     except Exception as e:
                         self.logger.debug(f"Could not get registration date: {e}")
                 

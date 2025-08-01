@@ -7,13 +7,12 @@ Uses the hybrid API client for reliable and fast monitoring
 import asyncio
 import logging
 import schedule
-import time
 import yaml
 import signal
 import sys
 import io
 from datetime import datetime, timedelta
-from typing import Dict, List
+from typing import Dict
 from encar_scraper_api import EncarScraperAPI
 from data_storage import EncarDatabase
 from notification import NotificationManager

@@ -3,7 +3,6 @@ import json
 import logging
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
-import pandas as pd
 from monetary_utils import parse_korean_price
 
 class EncarDatabase:
@@ -144,7 +143,6 @@ class EncarDatabase:
         
         try:
             # Use the updated monetary utilities
-            from monetary_utils import parse_korean_price
             return parse_korean_price(price_value)
             
         except Exception as e:
@@ -455,32 +453,32 @@ class EncarDatabase:
             logging.error(f"Error getting statistics: {e}")
             return {}
     
-    def export_to_csv(self, filename: str = None) -> str:
-        """Export database to CSV file."""
-        try:
-            if not filename:
-                filename = f"encar_listings_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    # def export_to_csv(self, filename: str = None) -> str:
+    #     """Export database to CSV file."""
+    #     try:
+    #         if not filename:
+    #             filename = f"encar_listings_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
             
-            with sqlite3.connect(self.db_path) as conn:
-                df = pd.read_sql_query("""
-                    SELECT 
-                        car_id, title, model, year, price, mileage, views,
-                        registration_date, listing_url, is_coupe, is_lease,
-                        true_price, lease_deposit, lease_monthly_payment, lease_term_months,
-                        first_seen, last_updated
-                    FROM listings 
-                    WHERE is_coupe = 1
-                    ORDER BY last_updated DESC
-                """, conn)
+    #         with sqlite3.connect(self.db_path) as conn:
+    #             df = pd.read_sql_query("""
+    #                 SELECT 
+    #                     car_id, title, model, year, price, mileage, views,
+    #                     registration_date, listing_url, is_coupe, is_lease,
+    #                     true_price, lease_deposit, lease_monthly_payment, lease_term_months,
+    #                     first_seen, last_updated
+    #                 FROM listings 
+    #                 WHERE is_coupe = 1
+    #                 ORDER BY last_updated DESC
+    #             """, conn)
                 
-                df.to_csv(filename, index=False, encoding='utf-8-sig')
+    #             df.to_csv(filename, index=False, encoding='utf-8-sig')
                 
-                print(f"✅ Exported {len(df)} listings to {filename}")
-                return filename
+    #             print(f"✅ Exported {len(df)} listings to {filename}")
+    #             return filename
                 
-        except Exception as e:
-            logging.error(f"Error exporting to CSV: {e}")
-            return None
+    #     except Exception as e:
+    #         logging.error(f"Error exporting to CSV: {e}")
+    #         return None
 
     # ===== CONSOLIDATED DATABASE QUERY OPERATIONS =====
     

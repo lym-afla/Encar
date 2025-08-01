@@ -21,8 +21,7 @@ import logging
 import time
 from typing import List, Dict, Optional
 from urllib.parse import quote
-from bs4 import BeautifulSoup
-from playwright.async_api import async_playwright, Page, Browser
+from playwright.async_api import async_playwright
 import yaml
 
 class EncarScraper:
