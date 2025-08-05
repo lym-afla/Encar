@@ -60,7 +60,7 @@ async def run_enhanced_initial_population():
             
             # Calculate how many pages to scan for good coverage of filtered results
             vehicles_per_page = 20
-            max_pages = min(30, max(10, total_count // (vehicles_per_page * 2)))  # Conservative estimate
+            max_pages = min(30, max(10, total_count // (vehicles_per_page)))  # Conservative estimate
             
             print(f"🎯 Will scan {max_pages} pages to get comprehensive coverage")
             print()
@@ -132,7 +132,7 @@ async def run_enhanced_initial_population():
             print()
             
             # Extract views and registration data using browser
-            updated_listings = await scraper.get_views_and_registration_batch(coupe_listings)
+            updated_listings = await scraper.get_views_registration_and_lease_batch(coupe_listings)
             
             # Update database with extracted data
             update_count = 0
@@ -188,9 +188,9 @@ async def run_enhanced_initial_population():
             for listing in coupe_listings:
                 true_price = listing.get('true_price', listing.get('price', 0))
                 if isinstance(true_price, (int, float)):
-                    if true_price < 5000:
+                    if true_price < 50000000:
                         price_ranges['Under 5000만원'] += 1
-                    elif true_price < 7000:
+                    elif true_price < 70000000:
                         price_ranges['5000-7000만원'] += 1
                     else:
                         price_ranges['7000-9000만원'] += 1

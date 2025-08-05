@@ -205,7 +205,7 @@ class EncarMonitorAPI:
                 self.logger.info(f"🎯 Found {len(truly_new_listings)} truly new listings!")
                 
                 # Enhance new listings with views/registration data (selective)
-                enhanced_listings = await self.scraper.get_views_and_registration_batch(truly_new_listings[:5])
+                enhanced_listings = await self.scraper.get_views_registration_and_lease_batch(truly_new_listings[:5])
                 
                 # Send notifications for new listings
                 self.notifier.send_batch_alert(enhanced_listings)

@@ -90,7 +90,7 @@ async def update_lease_data_refined():
     
     async with EncarScraperAPI(config) as scraper:
         # Extract lease data for flagged vehicles
-        updated_listings = await scraper.get_views_and_registration_batch(listings)
+        updated_listings = await scraper.get_views_registration_and_lease_batch(listings)
         
         # Update database with refined lease data
         print("💾 Updating database with refined lease data...")

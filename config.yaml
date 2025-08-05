@@ -41,13 +41,13 @@ monitoring:
   
   # Initial population settings
   initial_scan:
-    max_pages: 15  # Reduced from 20 - smarter limit
+    max_pages: 40  # Reduced from 20 - smarter limit
     target_coverage: 0.8  # Cover 80% of available listings
     min_pages: 5  # Always scan at least 5 pages
   
   # Regular monitoring settings  
   regular_scan:
-    base_pages: 3  # Reduced from 10 - focus on recent listings
+    base_pages: 5  # Reduced from 10 - focus on recent listings
     adaptive_increase: true  # Increase if finding many new listings
     max_adaptive_pages: 8  # Cap for adaptive increases
     

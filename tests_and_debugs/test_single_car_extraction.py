@@ -7,6 +7,12 @@ Test the get_views_and_registration_efficient method with a single car ID
 import asyncio
 import logging
 import yaml
+import sys
+import os
+
+# Add parent directory to path so we can import modules from the root
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from encar_scraper_api import EncarScraperAPI
 
 async def test_single_car_extraction():
@@ -15,12 +21,13 @@ async def test_single_car_extraction():
     # Set up logging
     logging.basicConfig(level=logging.DEBUG, format='%(levelname)s:%(name)s:%(message)s')
     
-    # Load config
-    with open('config.yaml', 'r', encoding='utf-8') as f:
+    # Load config from parent directory
+    config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config.yaml')
+    with open(config_path, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
     
     # Test with a specific car ID
-    test_car_id = "39940079"  # GLE-클래스 W167 AMG GLE53 4MATIC+
+    test_car_id = "39727392"  # This is the lease car URL
     test_url = f"https://fem.encar.com/cars/detail/{test_car_id}"
     
     print(f"🧪 Testing single car extraction for ID: {test_car_id}")
@@ -40,7 +47,7 @@ async def test_single_car_extraction():
         
         try:
             # Test the extraction method
-            views, registration_date, lease_info = await scraper.get_views_and_registration_efficient(
+            views, registration_date, lease_info = await scraper.get_views_registration_and_lease(
                 test_url, test_listing
             )
             
@@ -76,8 +83,9 @@ async def debug_page_content():
     import yaml
     from playwright.async_api import async_playwright
     
-    # Load config
-    with open('config.yaml', 'r', encoding='utf-8') as f:
+    # Load config from parent directory
+    config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config.yaml')
+    with open(config_path, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
     
     test_car_id = "39940079"

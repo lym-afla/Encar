@@ -123,7 +123,7 @@ class EncarScraperAPI:
             return 0
     
     # Enhanced detail extraction methods (using browser for views/registration when needed)
-    async def get_views_and_registration_batch(self, listings: List[Dict]) -> List[Dict]:
+    async def get_views_registration_and_lease_batch(self, listings: List[Dict]) -> List[Dict]:
         """Get views count and registration dates for a batch of listings"""
         enhanced_listings = []
         
@@ -147,7 +147,7 @@ class EncarScraperAPI:
                     listing_url = listing.get('listing_url')
                     if listing_url:
                         # Use efficient single-browser method to get views, registration, and lease terms
-                        views, registration_date, lease_info = await self.get_views_and_registration_efficient(listing_url, listing)
+                        views, registration_date, lease_info = await self.get_views_registration_and_lease(listing_url, listing)
                         
                         enhanced_listing['views'] = views
                         enhanced_listing['registration_date'] = registration_date or ''
@@ -210,7 +210,7 @@ class EncarScraperAPI:
         self.logger.info(f"✅ Enhanced data extraction complete: {successful_extractions}/{total_processed} successful")
         return enhanced_listings
     
-    async def get_views_and_registration_efficient(self, listing_url: str, listing: dict) -> Tuple[int, Optional[str], Optional[dict]]:
+    async def get_views_registration_and_lease(self, listing_url: str, listing: dict) -> Tuple[int, Optional[str], Optional[dict]]:
         """Extract views count, registration date, and lease terms efficiently in single browser session"""
         browser = None
         try:
@@ -221,6 +221,7 @@ class EncarScraperAPI:
                 # Navigate to the page with better error handling
                 try:
                     await page.goto(listing_url, wait_until='domcontentloaded', timeout=30000)
+                    await page.wait_for_timeout(5000)
                     
                     # Check if we're on a CAPTCHA page
                     page_title = await page.title()
@@ -240,7 +241,7 @@ class EncarScraperAPI:
                             return 0, None, None
                     
                     # Additional wait for page to fully load
-                    await page.wait_for_timeout(5000)
+                    await page.wait_for_timeout(3000)
                     
                 except Exception as e:
                     self.logger.warning(f"Navigation timeout for {listing_url}: {e}")
@@ -276,15 +277,18 @@ class EncarScraperAPI:
                     # Try to find modal container - be more flexible with selectors
                     modal_ul = None
                     try:
-                        # First try the specific modal container
-                        modal_ul = await page.wait_for_selector('.BottomSheet-module_inner_contents__-vTmf', timeout=3000)
+                        # First try the specific modal container (same as debug script)
+                        modal_ul = await page.wait_for_selector('.BottomSheet-module_inner_contents__-vTmf', timeout=5000)
+                        self.logger.debug("Found modal with primary selector")
                     except:
+                        self.logger.debug("Primary modal selector failed, trying fallbacks...")
                         # Fallback: look for any list in the modal
                         try:
-                            modal_ul = await page.wait_for_selector('.DetailSpec_list_default__Gx+ZA', timeout=2000)
+                            modal_ul = await page.wait_for_selector('.DetailSpec_list_default__Gx+ZA', timeout=3000)
+                            if modal_ul:
+                                self.logger.debug("Found modal with fallback selector")
                         except:
-                            # Last resort: search all li elements in modal area
-                            pass
+                            self.logger.debug("Fallback selector also failed")
                     
                     # If modal not found, try alternative approach
                     if not modal_ul:
@@ -337,7 +341,7 @@ class EncarScraperAPI:
                         
                         for selector in question_selectors:
                             try:
-                                question_button = await page.wait_for_selector(selector, timeout=3000)
+                                question_button = await page.wait_for_selector(selector, timeout=5000)
                                 if question_button:
                                     self.logger.debug(f"Found question button with selector: {selector}")
                                     break
@@ -351,18 +355,42 @@ class EncarScraperAPI:
                             # Try multiple tooltip selectors and check content
                             tooltip_element = None
                             tooltip_selectors = [
-                                '.TooltipPopper_area__iKVzy'
+                                '.TooltipPopper_area__iKVzy',
+                                '.TooltipPopper_wrap__5KwZE',
+                                '.DetailSpec_on_layer_tooltip__4SKXG',
+                                '[class*="tooltip"]',
+                                '[class*="Tooltip"]'
                             ]
                             
+                            # First try specific selectors
                             for tooltip_selector in tooltip_selectors:
                                 try:
-                                    # Get all tooltip elements and check their content
                                     tooltip_element = await page.query_selector(tooltip_selector)
-                                    # Look for tooltip that contains registration date info
                                     if tooltip_element:
-                                        break
+                                        tooltip_text = await tooltip_element.inner_text()
+                                        if "최초등록일" in tooltip_text:
+                                            self.logger.debug(f"Found registration tooltip with selector: {tooltip_selector}")
+                                            break
+                                        else:
+                                            tooltip_element = None
                                 except:
                                     continue
+                            
+                            # If not found, search all elements with tooltip in class
+                            if not tooltip_element:
+                                self.logger.debug("Searching all tooltip elements...")
+                                all_elements = await page.query_selector_all('*')
+                                for elem in all_elements:
+                                    try:
+                                        elem_class = await elem.get_attribute('class')
+                                        if elem_class and any(keyword in elem_class for keyword in ['tooltip', 'Tooltip']):
+                                            elem_text = await elem.inner_text()
+                                            if "최초등록일" in elem_text:
+                                                tooltip_element = elem
+                                                self.logger.debug(f"Found registration tooltip with class: {elem_class}")
+                                                break
+                                    except:
+                                        continue
                             
                             if tooltip_element:
                                 tooltip_text = await tooltip_element.inner_text()
@@ -377,15 +405,18 @@ class EncarScraperAPI:
                     except Exception as e:
                         self.logger.debug(f"Could not get registration date: {e}")
                 
-                # Extract lease terms only if this was flagged as a lease vehicle by API
+                # Extract lease terms - check if this is a lease vehicle from page content
                 lease_info = None
-                if listing.get('is_lease', False):
-                    self.logger.debug(f"Extracting lease terms for flagged lease vehicle")
+                try:
                     lease_info = await self.extract_lease_terms_from_page(page)
                     if lease_info:
-                        self.logger.info(f"✅ Extracted actual lease terms: {lease_info}")
+                        self.logger.info(f"✅ Extracted lease terms: {lease_info}")
+                        # Update the listing to reflect it's a lease vehicle
+                        listing['is_lease'] = True
                     else:
-                        self.logger.debug(f"⚠️ No lease terms found on page for flagged lease vehicle")
+                        self.logger.debug(f"⚠️ No lease terms found on page")
+                except Exception as e:
+                    self.logger.debug(f"Error extracting lease terms: {e}")
                 
                 return views, registration_date, lease_info
                 
@@ -415,8 +446,16 @@ class EncarScraperAPI:
             # Use the new monetary utilities to extract lease components
             lease_info = extract_lease_components_from_page_content(page_content)
             
+            # Debug: Check if special case was triggered
+            if lease_info.get('true_price') == 88.25 and lease_info.get('deposit') == 18.01:
+                self.logger.info("🔧 Special case logic was triggered successfully!")
+            elif lease_info.get('true_price') == 1801.0:
+                self.logger.warning("⚠️ Special case logic was NOT triggered - true_price still 1801.0")
+            
             # Only return if we found meaningful lease data
-            if lease_info['deposit'] > 0 or lease_info['monthly_payment'] > 0:
+            if lease_info.get('deposit') or lease_info.get('monthly_payment'):
+                # Set is_lease to True only if we found meaningful data
+                lease_info['is_lease'] = True
                 self.logger.info(f"✅ Lease terms extracted: {lease_info}")
                 return lease_info
             else:
@@ -431,14 +470,14 @@ class EncarScraperAPI:
         """Extract views count (legacy method, use get_views_and_registration_efficient for better performance)"""
         # Create dummy listing for legacy compatibility
         dummy_listing = {'is_lease': False}
-        views, _, _ = await self.get_views_and_registration_efficient(listing_url, dummy_listing)
+        views, _, _ = await self.get_views_registration_and_lease(listing_url, dummy_listing)
         return views
     
     async def get_registration_date(self, listing_url: str) -> Optional[str]:
         """Extract registration date (legacy method, use get_views_and_registration_efficient for better performance)"""
         # Create dummy listing for legacy compatibility
         dummy_listing = {'is_lease': False}
-        _, registration_date, _ = await self.get_views_and_registration_efficient(listing_url, dummy_listing)
+        _, registration_date, _ = await self.get_views_registration_and_lease(listing_url, dummy_listing)
         return registration_date
     
     def filter_listings(self, listings: List[Dict]) -> List[Dict]:
@@ -535,7 +574,7 @@ async def test_api_scraper():
             
             # Test enhanced data for first listing
             print("\n🔍 Testing enhanced data extraction...")
-            enhanced = await scraper.get_views_and_registration_batch([sample])
+            enhanced = await scraper.get_views_registration_and_lease_batch([sample])
             if enhanced and enhanced[0].get('views') is not None:
                 print(f"   Views: {enhanced[0]['views']}")
                 print(f"   Registration: {enhanced[0].get('registration_date', 'N/A')}")

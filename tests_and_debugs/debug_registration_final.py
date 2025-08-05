@@ -7,14 +7,20 @@ Test registration extraction after modal is opened
 import asyncio
 import logging
 import yaml
+import sys
+import os
 from playwright.async_api import async_playwright
 import re
+
+# Add parent directory to path so we can import modules from the root
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 async def debug_registration_final():
     """Debug registration extraction after modal is opened"""
     
-    # Load config
-    with open('config.yaml', 'r', encoding='utf-8') as f:
+    # Load config from parent directory
+    config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config.yaml')
+    with open(config_path, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
     
     test_car_id = "39940079"

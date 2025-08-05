@@ -7,6 +7,11 @@ Find all tooltips on the page and their content
 import asyncio
 import logging
 import yaml
+import sys
+import os
+
+# Add parent directory to path so we can import modules from the root
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from playwright.async_api import async_playwright
 import re
 
@@ -14,7 +19,8 @@ async def debug_all_tooltips():
     """Debug to find all tooltips on the page"""
     
     # Load config
-    with open('config.yaml', 'r', encoding='utf-8') as f:
+    config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config.yaml')
+    with open(config_path, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
     
     test_car_id = "39940079"

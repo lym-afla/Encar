@@ -7,6 +7,11 @@ Test with specific car IDs to identify the timeout issues.
 import asyncio
 import logging
 import yaml
+import sys
+import os
+
+# Add parent directory to path so we can import modules from the root
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from playwright.async_api import async_playwright
 import re
 from typing import Optional
@@ -173,7 +178,8 @@ async def test_with_api_cars():
     """Test with real car IDs from the API"""
     
     # Load config
-    with open('config.yaml', 'r', encoding='utf-8') as f:
+    config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config.yaml')
+    with open(config_path, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
     
     from encar_api_client import EncarAPIClient

@@ -296,6 +296,87 @@ class EncarDatabase:
             logging.error(f"Error saving listing {listing_data.get('car_id', 'unknown')}: {e}")
             return 'error'
     
+    def update_listing_data(self, car_id: str, views: int = None, registration_date: str = None, 
+                           is_lease: bool = None, lease_info: Dict = None) -> bool:
+        """
+        Update specific fields for an existing listing.
+        Used for enhancing existing listings with missing data.
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Check if listing exists
+                cursor.execute("SELECT id FROM listings WHERE car_id = ?", (car_id,))
+                if not cursor.fetchone():
+                    logging.warning(f"Listing {car_id} not found for update")
+                    return False
+                
+                # Build update query dynamically based on provided fields
+                update_fields = []
+                update_values = []
+                
+                if views is not None:
+                    update_fields.append("views = ?")
+                    update_values.append(views)
+                
+                if registration_date is not None:
+                    update_fields.append("registration_date = ?")
+                    update_values.append(registration_date)
+                    # Recalculate days since registration
+                    days_since_reg = self.calculate_days_since_registration(registration_date)
+                    if days_since_reg is not None:
+                        update_fields.append("days_since_registration = ?")
+                        update_values.append(days_since_reg)
+                
+                if is_lease is not None:
+                    update_fields.append("is_lease = ?")
+                    update_values.append(is_lease)
+                
+                if lease_info is not None:
+                    # Extract lease components
+                    lease_deposit = lease_info.get('deposit')
+                    lease_monthly_payment = lease_info.get('monthly_payment')
+                    lease_term_months = lease_info.get('lease_term_months')
+                    lease_total_monthly_cost = lease_info.get('total_monthly_cost')
+                    
+                    if lease_deposit is not None:
+                        update_fields.append("lease_deposit = ?")
+                        update_values.append(lease_deposit)
+                    
+                    if lease_monthly_payment is not None:
+                        update_fields.append("lease_monthly_payment = ?")
+                        update_values.append(lease_monthly_payment)
+                    
+                    if lease_term_months is not None:
+                        update_fields.append("lease_term_months = ?")
+                        update_values.append(lease_term_months)
+                    
+                    if lease_total_monthly_cost is not None:
+                        update_fields.append("lease_total_monthly_cost = ?")
+                        update_values.append(lease_total_monthly_cost)
+                
+                # Always update the last_updated timestamp
+                update_fields.append("last_updated = CURRENT_TIMESTAMP")
+                
+                if not update_fields:
+                    logging.warning(f"No fields to update for {car_id}")
+                    return False
+                
+                # Execute update
+                update_query = f"UPDATE listings SET {', '.join(update_fields)} WHERE car_id = ?"
+                update_values.append(car_id)
+                
+                cursor.execute(update_query, update_values)
+                conn.commit()
+                
+                logging.debug(f"Updated listing {car_id} with fields: {update_fields}")
+                return True
+                
+        except Exception as e:
+            logging.error(f"Error updating listing {car_id}: {e}")
+            return False
+    
     def get_truly_new_listings(self, config: Dict = None) -> List[Dict]:
         """Get listings that are truly new based on the new architecture."""
         try:

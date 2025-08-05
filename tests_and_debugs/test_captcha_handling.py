@@ -7,6 +7,11 @@ Test the updated scraper with CAPTCHA handling
 import asyncio
 import logging
 import yaml
+import sys
+import os
+
+# Add parent directory to path so we can import modules from the root
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from encar_scraper_api import EncarScraperAPI
 
 async def test_captcha_handling():
@@ -16,7 +21,8 @@ async def test_captcha_handling():
     logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
     
     # Load config
-    with open('config.yaml', 'r', encoding='utf-8') as f:
+    config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config.yaml')
+    with open(config_path, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
     
     # Test with a specific car ID
@@ -40,7 +46,7 @@ async def test_captcha_handling():
         
         try:
             # Test the extraction method
-            views, registration_date, lease_info = await scraper.get_views_and_registration_efficient(
+            views, registration_date, lease_info = await scraper.get_views_registration_and_lease(
                 test_url, test_listing
             )
             
