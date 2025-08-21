@@ -157,6 +157,10 @@ class EncarScraperAPI:
                             # Browser confirmed lease terms - update with actual data
                             enhanced_listing['is_lease'] = True
                             enhanced_listing['lease_info'] = lease_info
+                            # Map lease variables to database columns:
+                            # - estimated_price -> price (for lease vehicles)
+                            # - total_cost -> true_price (for lease vehicles)
+                            enhanced_listing['price'] = lease_info.get('estimated_price', listing.get('price', 0))
                             enhanced_listing['true_price'] = lease_info.get('total_cost', listing.get('price', 0))
                             self.logger.info(f"✅ Browser confirmed lease terms: {listing.get('car_id')} - {lease_info}")
                         elif listing.get('is_lease', False):
@@ -445,12 +449,6 @@ class EncarScraperAPI:
             
             # Use the new monetary utilities to extract lease components
             lease_info = extract_lease_components_from_page_content(page_content)
-            
-            # Debug: Check if special case was triggered
-            if lease_info.get('true_price') == 88.25 and lease_info.get('deposit') == 18.01:
-                self.logger.info("🔧 Special case logic was triggered successfully!")
-            elif lease_info.get('true_price') == 1801.0:
-                self.logger.warning("⚠️ Special case logic was NOT triggered - true_price still 1801.0")
             
             # Only return if we found meaningful lease data
             if lease_info.get('deposit') or lease_info.get('monthly_payment'):

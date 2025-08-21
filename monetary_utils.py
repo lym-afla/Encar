@@ -91,7 +91,7 @@ def format_price_to_manwon_compact(price_value: Union[int, float]) -> str:
         logging.warning(f"Could not format price '{price_value}': {e}")
         return "0.0만원"
 
-def calculate_lease_true_cost(deposit: float, monthly_payment: float, term_months: int) -> float:
+def calculate_lease_true_cost(deposit: float, monthly_payment: float, term_months: int, final_payment: float = 0) -> float:
     """
     Calculate true cost for lease vehicle.
     
@@ -99,13 +99,14 @@ def calculate_lease_true_cost(deposit: float, monthly_payment: float, term_month
         deposit: Initial deposit in 만원
         monthly_payment: Monthly payment in 만원
         term_months: Lease term in months
+        final_payment: Final payment at end of lease in 만원 (optional)
     
     Returns:
         Total true cost in 만원
     """
     try:
         total_monthly_cost = monthly_payment * term_months
-        true_cost = deposit + total_monthly_cost
+        true_cost = deposit + total_monthly_cost + final_payment
         return true_cost
     except Exception as e:
         logging.warning(f"Could not calculate lease true cost: {e}")
@@ -125,6 +126,8 @@ def extract_lease_components_from_page_content(page_content: str) -> dict:
             'deposit': float,  # in 만원
             'monthly_payment': float,  # in 만원
             'lease_term_months': int,
+            'estimated_price': float,  # in 만원 (previously 'true_price')
+            'final_payment': float,  # in 만원
             'total_cost': float  # in 만원
         }
     """
@@ -133,7 +136,8 @@ def extract_lease_components_from_page_content(page_content: str) -> dict:
         'deposit': None,
         'monthly_payment': None,
         'lease_term_months': None,
-        'true_price': None,
+        'estimated_price': None,  # Previously 'true_price'
+        'final_payment': None,  # Final payment at end of lease
         'total_cost': None
     }
     
@@ -326,8 +330,8 @@ def extract_lease_components_from_page_content(page_content: str) -> dict:
                     if result['lease_term_months']:
                         break
         
-        # Extract true price (vehicle price) from Korean HTML
-        true_price_patterns = [
+        # Extract estimated price (vehicle price) from Korean HTML
+        estimated_price_patterns = [
             r'차량가격.*?([\d,]+\.?[\d]*)만원',
             r'차량가격.*?([\d,]+)\s*만원',
             r'차량가격.*?([\d,]+)만원',
@@ -335,7 +339,7 @@ def extract_lease_components_from_page_content(page_content: str) -> dict:
             r'([\d,]+)만원.*?차량가격',
         ]
         
-        for pattern in true_price_patterns:
+        for pattern in estimated_price_patterns:
             match = re.search(pattern, page_content)
             if match:
                 price_str = match.group(1).replace(',', '')
@@ -348,17 +352,17 @@ def extract_lease_components_from_page_content(page_content: str) -> dict:
                         amount = float(price_str)
                     
                     if amount and amount > 0:
-                        # For true price, if the amount is > 1000, it's likely in thousands
+                        # For estimated price, if the amount is > 1000, it's likely in thousands
                         # So 8,825 should be interpreted as 88.25 million won
                         if amount > 1000:
                             amount = amount / 100.0
-                        result['true_price'] = amount
+                        result['estimated_price'] = amount
                         break
                 except (ValueError, TypeError):
                     continue
         
-        # If no true price found with patterns, try a more sophisticated approach for Korean content
-        if not result['true_price']:
+        # If no estimated price found with patterns, try a more sophisticated approach for Korean content
+        if not result['estimated_price']:
             # Look for numbers that appear before "차량가격" in the HTML
             vehicle_price_positions = [m.start() for m in re.finditer('차량가격', page_content)]
             for pos in vehicle_price_positions:
@@ -372,16 +376,81 @@ def extract_lease_components_from_page_content(page_content: str) -> dict:
                         amount = float(number_str.replace(',', ''))
                         # Vehicle prices are typically large amounts (over 50만원)
                         if amount and amount > 50:
-                            result['true_price'] = amount
+                            result['estimated_price'] = amount
                             break
                     except (ValueError, TypeError):
                         continue
                 
-                if result['true_price']:
+                if result['estimated_price']:
                     break
         
-        # Fallback: If deposit and true price are still not found, try to extract from remaining amounts
-        if not result['deposit'] or not result['true_price']:
+        # Extract final payment (리스 만기 후 비용) - Korean patterns
+        final_payment_patterns = [
+            r'리스\s*만기\s*후\s*비용.*?([\d,]+\.?[\d]*)만원',
+            r'만기\s*후\s*비용.*?([\d,]+\.?[\d]*)만원',
+            r'구매.*?([\d,]+\.?[\d]*)만원',  # "구매 (리스사에게 지급)" context
+            r'반납.*?([\d,]+\.?[\d]*)만원',  # "반납 (보증금 환급)" context
+            # Look for amounts near "리스 만기 후 비용" or "만기 후 비용"
+            r'([\d,]+\.?[\d]*)만원.*?만기\s*후',
+            r'만기\s*후.*?([\d,]+\.?[\d]*)만원',
+            # Handle comma-separated amounts
+            r'([\d,]+)\s*만원.*?만기',
+            r'만기.*?([\d,]+)\s*만원',
+        ]
+        
+        for pattern in final_payment_patterns:
+            match = re.search(pattern, page_content)
+            if match:
+                payment_str = match.group(1).replace(',', '')
+                try:
+                    # Handle comma-separated amounts
+                    if ',' in payment_str:
+                        # Remove commas and convert to float
+                        amount = float(payment_str.replace(',', ''))
+                    else:
+                        amount = float(payment_str)
+                    
+                    # For final payments, if the amount is > 1000, it's likely in thousands
+                    # So 2,301 should be interpreted as 23.01 million won
+                    if amount > 1000:
+                        amount = amount / 100.0
+                    
+                    if amount and amount > 0:
+                        result['final_payment'] = amount
+                        break
+                except (ValueError, TypeError):
+                    continue
+        
+        # If no final payment found with patterns, try a more flexible approach
+        if not result['final_payment']:
+            # Look for amounts that appear near "만기 후" or "구매" or "반납" keywords
+            manwon_positions = [m.start() for m in re.finditer('만원', page_content)]
+            for pos in manwon_positions:
+                # Look for numbers in a larger context around "만원" (500 characters)
+                before_manwon = page_content[max(0, pos-500):pos]
+                after_manwon = page_content[pos:pos+500]
+                full_context = before_manwon + after_manwon
+                
+                # Check if this context contains final payment keywords
+                if any(keyword in full_context for keyword in ["만기 후", "구매", "반납", "리스 만기"]):
+                    number_pattern = r'([\d,]+\.?[\d]*)'
+                    numbers_before = re.findall(number_pattern, before_manwon)
+                    
+                    for number_str in numbers_before:
+                        try:
+                            amount = float(number_str.replace(',', ''))
+                            # Final payments are typically substantial amounts (10-50만원)
+                            if amount > 1000 and 10 <= amount/100.0 <= 50:
+                                result['final_payment'] = amount / 100.0
+                                break
+                        except (ValueError, TypeError):
+                            continue
+                    
+                    if result['final_payment']:
+                        break
+        
+        # Fallback: If deposit and estimated price are still not found, try to extract from remaining amounts
+        if not result['deposit'] or not result['estimated_price']:
             # Find all comma-separated amounts in the content (including those with spaces)
             all_amounts = re.findall(r'([\d,]+)\s*만원', page_content)
             large_amounts = []
@@ -397,98 +466,76 @@ def extract_lease_components_from_page_content(page_content: str) -> dict:
             # Sort by amount (largest first)
             large_amounts.sort(reverse=True)
             
-            # Special case: if we have 8,825 and 1,801, use them correctly and return immediately
-            if 8825.0 in large_amounts and 1801.0 in large_amounts:
-                print(f"🔧 Special case triggered: found 8825.0 and 1801.0 in large_amounts: {large_amounts}")
-                # Always override true_price and deposit in special case
-                result['true_price'] = 88.25  # 8,825 / 100
-                print(f"   ✅ Set true_price to 88.25")
-                result['deposit'] = 18.01  # 1,801 / 100
-                print(f"   ✅ Set deposit to 18.01")
-                
-                # Set is_lease to True since we found meaningful lease data
-                result['is_lease'] = True
-                print(f"   ✅ Set is_lease to True")
-                
-                # Calculate total cost if we have all components
-                if result['deposit'] and result['monthly_payment'] and result['lease_term_months']:
-                    result['total_cost'] = calculate_lease_true_cost(
-                        result['deposit'], 
-                        result['monthly_payment'], 
-                        result['lease_term_months']
-                    )
-                print(f"   ✅ Returning result with special case values")
-                return result  # Return immediately after special case
             
-            # Try to identify deposit and true price based on context (only if special case didn't work)
-            if not result['true_price'] or not result['deposit']:
-                if len(large_amounts) >= 2:
-                    # Look for amounts near "인수금" (deposit) and "차량가격" (vehicle price)
-                    for amount in large_amounts:
-                        amount_str = f"{int(amount):,}"
+            
+            if len(large_amounts) >= 2:
+                # Look for amounts near "인수금" (deposit) and "차량가격" (vehicle price)
+                for amount in large_amounts:
+                    amount_str = f"{int(amount):,}"
+                    
+                    # Check if this amount appears near "인수금" (deposit context)
+                    if not result['deposit'] and (f"{amount_str}만원" in page_content or f"{amount_str} 만원" in page_content):
+                        # Look for "인수금" near this amount
+                        amount_positions = [m.start() for m in re.finditer(re.escape(f"{amount_str}만원"), page_content)]
+                        amount_positions.extend([m.start() for m in re.finditer(re.escape(f"{amount_str} 만원"), page_content)])
+                        for pos in amount_positions:
+                            context_before = page_content[max(0, pos-200):pos]
+                            context_after = page_content[pos:pos+200]
+                            if "인수금" in context_before or "인수금" in context_after:
+                                result['deposit'] = amount / 100.0  # Convert to million won
+                                break
+                    
+                    # Check if this amount appears near "차량가격" (vehicle price context)
+                    if not result['estimated_price']:
+                        # First, try to find this amount in the content
+                        amount_found = False
+                        amount_positions = []
                         
-                        # Check if this amount appears near "인수금" (deposit context)
-                        if not result['deposit'] and (f"{amount_str}만원" in page_content or f"{amount_str} 만원" in page_content):
-                            # Look for "인수금" near this amount
-                            amount_positions = [m.start() for m in re.finditer(re.escape(f"{amount_str}만원"), page_content)]
+                        # Look for both formats: with and without space
+                        if f"{amount_str}만원" in page_content:
+                            amount_positions.extend([m.start() for m in re.finditer(re.escape(f"{amount_str}만원"), page_content)])
+                            amount_found = True
+                        if f"{amount_str} 만원" in page_content:
                             amount_positions.extend([m.start() for m in re.finditer(re.escape(f"{amount_str} 만원"), page_content)])
+                            amount_found = True
+                        
+                        if amount_found:
+                            # Check if this amount appears near "차량가격"
                             for pos in amount_positions:
                                 context_before = page_content[max(0, pos-200):pos]
                                 context_after = page_content[pos:pos+200]
-                                if "인수금" in context_before or "인수금" in context_after:
-                                    result['deposit'] = amount / 100.0  # Convert to million won
+                                if "차량가격" in context_before or "차량가격" in context_after:
+                                    result['estimated_price'] = amount / 100.0  # Convert to million won
                                     break
                         
-                        # Check if this amount appears near "차량가격" (vehicle price context)
-                        if not result['true_price']:
-                            # First, try to find this amount in the content
-                            amount_found = False
-                            amount_positions = []
-                            
-                            # Look for both formats: with and without space
-                            if f"{amount_str}만원" in page_content:
-                                amount_positions.extend([m.start() for m in re.finditer(re.escape(f"{amount_str}만원"), page_content)])
-                                amount_found = True
-                            if f"{amount_str} 만원" in page_content:
-                                amount_positions.extend([m.start() for m in re.finditer(re.escape(f"{amount_str} 만원"), page_content)])
-                                amount_found = True
-                            
-                            if amount_found:
-                                # Check if this amount appears near "차량가격"
-                                for pos in amount_positions:
-                                    context_before = page_content[max(0, pos-200):pos]
-                                    context_after = page_content[pos:pos+200]
-                                    if "차량가격" in context_before or "차량가격" in context_after:
-                                        result['true_price'] = amount / 100.0  # Convert to million won
-                                        break
-                            
-                            # Also check if this amount appears after "차량가격" in a larger context
-                            if not result['true_price']:
-                                vehicle_price_positions = [m.start() for m in re.finditer('차량가격', page_content)]
-                                for vp_pos in vehicle_price_positions:
-                                    # Look in a larger context after "차량가격" (500 characters)
-                                    context_after_vp = page_content[vp_pos:vp_pos+500]
-                                    if f"{amount_str}만원" in context_after_vp or f"{amount_str} 만원" in context_after_vp:
-                                        result['true_price'] = amount / 100.0  # Convert to million won
-                                        break
-                    
-                    # Use the largest amount as true price
-                    if not result['true_price'] and large_amounts:
-                        result['true_price'] = large_amounts[0] / 100.0
-                    # Use the second largest amount as deposit
-                    if not result['deposit'] and len(large_amounts) >= 2:
-                        result['deposit'] = large_amounts[1] / 100.0
-                elif len(large_amounts) == 1:
-                    # Use the only large amount as true price
-                    if not result['true_price']:
-                        result['true_price'] = large_amounts[0] / 100.0  # Convert to million won
+                        # Also check if this amount appears after "차량가격" in a larger context
+                        if not result['estimated_price']:
+                            vehicle_price_positions = [m.start() for m in re.finditer('차량가격', page_content)]
+                            for vp_pos in vehicle_price_positions:
+                                # Look in a larger context after "차량가격" (500 characters)
+                                context_after_vp = page_content[vp_pos:vp_pos+500]
+                                if f"{amount_str}만원" in context_after_vp or f"{amount_str} 만원" in context_after_vp:
+                                    result['estimated_price'] = amount / 100.0  # Convert to million won
+                                    break
+                
+                # Use the largest amount as estimated price
+                if not result['estimated_price'] and large_amounts:
+                    result['estimated_price'] = large_amounts[0] / 100.0
+                # Use the second largest amount as deposit
+                if not result['deposit'] and len(large_amounts) >= 2:
+                    result['deposit'] = large_amounts[1] / 100.0
+            elif len(large_amounts) == 1:
+                # Use the only large amount as estimated price
+                if not result['estimated_price']:
+                    result['estimated_price'] = large_amounts[0] / 100.0  # Convert to million won
         
         # Calculate total cost if we have all components
         if result['deposit'] and result['monthly_payment'] and result['lease_term_months']:
             result['total_cost'] = calculate_lease_true_cost(
                 result['deposit'], 
                 result['monthly_payment'], 
-                result['lease_term_months']
+                result['lease_term_months'],
+                result.get('final_payment', 0)
             )
         
         # Set is_lease to True if we found meaningful lease data

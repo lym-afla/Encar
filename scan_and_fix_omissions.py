@@ -163,6 +163,87 @@ class OmissionScanner:
             'failed': failed
         }
     
+    async def update_lease_for_car_id(self, car_id: str) -> Dict:
+        """Update lease information for a specific car ID"""
+        try:
+            self.logger.info(f"🔧 Updating lease information for car ID: {car_id}")
+            
+            # Get the listing from database
+            conn = sqlite3.connect(self.db.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                SELECT car_id, title, listing_url, is_lease
+                FROM listings 
+                WHERE car_id = ?
+            """, (car_id,))
+            
+            row = cursor.fetchone()
+            if not row:
+                self.logger.error(f"❌ Car ID {car_id} not found in database")
+                return {'success': False, 'error': 'Car ID not found'}
+            
+            listing = {
+                'car_id': row[0],
+                'title': row[1],
+                'listing_url': row[2],
+                'is_lease': bool(row[3])
+            }
+            
+            conn.close()
+            
+            # Process the single listing
+            async with EncarScraperAPI(self.config) as scraper:
+                enhanced_listings = await scraper.get_views_registration_and_lease_batch([listing])
+            
+            if not enhanced_listings:
+                return {'success': False, 'error': 'No data extracted'}
+            
+            enhanced_listing = enhanced_listings[0]
+            
+            # Extract lease information
+            views = enhanced_listing.get('views', 0)
+            registration_date = enhanced_listing.get('registration_date', '')
+            is_lease = enhanced_listing.get('is_lease', False)
+            lease_info = enhanced_listing.get('lease_info')
+            
+            # Update database
+            self.db.update_listing_data(
+                car_id=car_id,
+                views=views,
+                registration_date=registration_date,
+                is_lease=is_lease,
+                lease_info=lease_info
+            )
+            
+            # Log the results
+            self.logger.info(f"✅ Updated car ID {car_id}:")
+            self.logger.info(f"   - Views: {views}")
+            self.logger.info(f"   - Registration: {registration_date}")
+            self.logger.info(f"   - Is Lease: {is_lease}")
+            
+            if lease_info:
+                self.logger.info(f"   - Lease Deposit: {lease_info.get('deposit')}만원")
+                self.logger.info(f"   - Monthly Payment: {lease_info.get('monthly_payment')}만원")
+                self.logger.info(f"   - Lease Term: {lease_info.get('lease_term_months')}개월")
+                self.logger.info(f"   - Estimated Price: {lease_info.get('estimated_price')}만원")
+                self.logger.info(f"   - True Price: {lease_info.get('total_cost')}만원")
+                self.logger.info(f"   - Final Payment: {lease_info.get('final_payment')}만원")
+                self.logger.info(f"   - Total Cost: {lease_info.get('total_cost')}만원")
+            
+            return {
+                'success': True,
+                'car_id': car_id,
+                'views': views,
+                'registration_date': registration_date,
+                'is_lease': is_lease,
+                'lease_info': lease_info
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error updating lease for car ID {car_id}: {e}")
+            return {'success': False, 'error': str(e)}
+    
     def get_statistics(self) -> Dict:
         """Get current database statistics"""
         try:
@@ -261,9 +342,10 @@ async def main():
     print("🔍 Encar Database Omission Scanner")
     print("=" * 50)
     
-    # Check command line arguments first
+    # Check command line arguments
     dry_run = '--dry-run' in sys.argv or '-d' in sys.argv
     stats_only = '--stats' in sys.argv or '-s' in sys.argv
+    update_lease = '--update-lease' in sys.argv or '-u' in sys.argv
     
     # Set up logging
     logging.basicConfig(
@@ -291,6 +373,28 @@ async def main():
         stats = scanner.get_statistics()
         for key, value in stats.items():
             print(f"   {key}: {value}")
+        return
+    
+    if update_lease:
+        # Find car_id argument
+        car_id = None
+        for i, arg in enumerate(sys.argv):
+            if arg in ['--update-lease', '-u'] and i + 1 < len(sys.argv):
+                car_id = sys.argv[i + 1]
+                break
+        
+        if not car_id:
+            print("❌ Error: Please provide a car ID after --update-lease or -u")
+            print("Usage: python scan_and_fix_omissions.py --update-lease <car_id>")
+            return
+        
+        print(f"\n🔧 Updating lease information for car ID: {car_id}")
+        result = await scanner.update_lease_for_car_id(car_id)
+        
+        if result['success']:
+            print("✅ Lease information updated successfully!")
+        else:
+            print(f"❌ Failed to update lease information: {result.get('error', 'Unknown error')}")
         return
     
     if dry_run:

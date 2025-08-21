@@ -209,7 +209,7 @@ class EncarFilterTools:
         # Get recent, low-mileage vehicles under 6000만원
         filters = {
             'year_min': 2019,  # 2019 or newer
-            'price_max': 6000,  # Under 6000만원 (will be filtered by true_price later)
+            'price_max': 70,  # Under 6000만원 (will be filtered by true_price later)
             'mileage_max': 60000  # Under 60,000km
         }
         

@@ -50,7 +50,7 @@ async def run_enhanced_initial_population():
             # Define filters for 2021+ vehicles under 90 million won
             filters = {
                 'year_min': 2021,      # 2021 or newer
-                'price_max': 9000      # 90 million won (API uses 만원 units)
+                'price_max': 90      # 90 million won (API uses 만원 units)
             }
             
             print(f"📊 Getting total count...")
@@ -60,7 +60,7 @@ async def run_enhanced_initial_population():
             
             # Calculate how many pages to scan for good coverage of filtered results
             vehicles_per_page = 20
-            max_pages = min(30, max(10, total_count // (vehicles_per_page)))  # Conservative estimate
+            max_pages = min(60, max(10, total_count // (vehicles_per_page)))  # Conservative estimate
             
             print(f"🎯 Will scan {max_pages} pages to get comprehensive coverage")
             print()

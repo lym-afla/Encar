@@ -85,7 +85,9 @@ async def test_lease_detection():
                     print(f"   Deposit: {lease_info.get('deposit')}만원")
                     print(f"   Monthly Payment: {lease_info.get('monthly_payment')}만원")
                     print(f"   Lease Term: {lease_info.get('lease_term_months')} months")
-                    print(f"   True Price: {lease_info.get('true_price')}만원")
+                    print(f"   Estimated Price: {lease_info.get('estimated_price')}만원")
+                    print(f"   True Price: {lease_info.get('total_cost')}만원")
+                    print(f"   Final Payment: {lease_info.get('final_payment')}만원")
                     print(f"   Total Cost: {lease_info.get('total_cost')}만원")
                 else:
                     print("❌ No lease terms extracted")
@@ -100,7 +102,10 @@ async def test_lease_detection():
                     "월리스료",
                     "개월",
                     "리스",
-                    "렌트"
+                    "렌트",
+                    "만기 후",
+                    "구매",
+                    "반납"
                 ]
                 
                 for indicator in lease_indicators:

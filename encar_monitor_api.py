@@ -140,8 +140,14 @@ class EncarMonitorAPI:
             
             self.logger.info(f"🎯 Scanning {optimal_pages} pages for initial population")
             
-            # Get listings using API
-            listings = await self.scraper.scrape_multiple_pages(max_pages=optimal_pages)
+            # Apply filters for initial population from config
+            filters = {
+                'year_min': int(self.config['search']['year_range'].split('..')[0][:4]),  # Extract year from "202100.."
+                'price_max': int(self.config['search']['price_range'].split('..')[1]) / 100  # Convert "..9000" to 90
+            }
+            
+            # Get listings using API with filters
+            listings = await self.scraper.scrape_with_filters(filters=filters, max_pages=optimal_pages)
             
             if listings:
                 # Save all listings to database
@@ -176,8 +182,14 @@ class EncarMonitorAPI:
             
             self.logger.info(f"🔍 Regular scan: checking first {base_pages} pages...")
             
-            # Get recent listings using API
-            listings = await self.scraper.scrape_multiple_pages(max_pages=base_pages)
+            # Apply filters for regular monitoring from config
+            filters = {
+                'year_min': int(self.config['search']['year_range'].split('..')[0][:4]),  # Extract year from "202100.."
+                'price_max': int(self.config['search']['price_range'].split('..')[1]) / 100  # Convert "..9000" to 90
+            }
+            
+            # Get recent listings using API with filters
+            listings = await self.scraper.scrape_with_filters(filters=filters, max_pages=base_pages)
             
             if not listings:
                 self.logger.warning("⚠️ No listings found in regular scan")
@@ -207,18 +219,25 @@ class EncarMonitorAPI:
                 # Enhance new listings with views/registration data (selective)
                 enhanced_listings = await self.scraper.get_views_registration_and_lease_batch(truly_new_listings[:5])
                 
+                # Save enhanced data to database
+                for listing in enhanced_listings:
+                    try:
+                        self.database.save_listing(listing, self.config)
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ Could not save enhanced listing {listing.get('car_id', 'unknown')}: {e}")
+                
                 # Send notifications for new listings
                 self.notifier.send_batch_alert(enhanced_listings)
             else:
                 self.logger.info(f"📊 Scan completed: {len(listings)} listings processed, {new_count} new")
             
-            # Adaptive page increase if finding many new listings
-            if regular_config.get('adaptive_increase', False) and new_count > 5:
-                additional_pages = min(3, regular_config.get('max_adaptive_pages', 8) - base_pages)
-                if additional_pages > 0:
-                    self.logger.info(f"📈 High new listing activity, scanning {additional_pages} additional pages")
-                    additional_listings = await self.scraper.scrape_multiple_pages(max_pages=additional_pages)
-                    # Process additional listings...
+            # # Adaptive page increase if finding many new listings
+            # if regular_config.get('adaptive_increase', False) and new_count > 5:
+            #     additional_pages = min(3, regular_config.get('max_adaptive_pages', 8) - base_pages)
+            #     if additional_pages > 0:
+            #         self.logger.info(f"📈 High new listing activity, scanning {additional_pages} additional pages")
+            #         additional_listings = await self.scraper.scrape_with_filters(filters=filters, max_pages=additional_pages)
+            #         # Process additional listings...
                     
         except Exception as e:
             self.logger.error(f"❌ Error in regular monitoring: {e}")
@@ -228,8 +247,14 @@ class EncarMonitorAPI:
         try:
             self.logger.info("⚡ Running quick scan...")
             
-            # Quick scan of first page only
-            listings = await self.scraper.get_quick_scan(pages=1)
+            # Apply filters for quick scan from config
+            filters = {
+                'year_min': int(self.config['search']['year_range'].split('..')[0][:4]),  # Extract year from "202100.."
+                'price_max': int(self.config['search']['price_range'].split('..')[1]) / 100  # Convert "..9000" to 90
+            }
+            
+            # Quick scan of first page only with filters
+            listings = await self.scraper.scrape_with_filters(filters=filters, max_pages=1)
             
             if listings:
                 new_count = 0
@@ -244,8 +269,8 @@ class EncarMonitorAPI:
                 
                 if fresh_listings:
                     self.logger.info(f"🔥 Found {len(fresh_listings)} very fresh listings!")
-                    for listing in fresh_listings:
-                        self.notifier.send_immediate_alert(listing)
+                    # Use send_batch_alert for immediate alerts (send_immediate_alert doesn't exist)
+                    self.notifier.send_batch_alert(fresh_listings)
                 
                 self.logger.info(f"⚡ Quick scan: {len(listings)} listings, {new_count} new")
             else:

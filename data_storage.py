@@ -25,8 +25,8 @@ class EncarDatabase:
                         title TEXT NOT NULL,
                         model TEXT,
                         year INTEGER,
-                        price TEXT,
-                        mileage TEXT,
+                        price REAL,  -- Price in millions
+                        mileage INTEGER,  -- Mileage as integer
                         views INTEGER,
                         registration_date TEXT,
                         listing_url TEXT,
@@ -36,16 +36,15 @@ class EncarDatabase:
                         is_new_listing BOOLEAN DEFAULT 1,
                         is_truly_new BOOLEAN DEFAULT 1,  -- Based on registration date + not in DB
                         days_since_registration INTEGER,
-                        price_numeric REAL,  -- Price in 만원 (million won)
-                        -- Lease-related columns (all in 만원)
+                        -- Lease-related columns (all in millions)
                         is_lease BOOLEAN DEFAULT 0,
-                        true_price REAL,  -- Total cost in 만원 (same as price_numeric for purchases, calculated for leases)
-                        lease_deposit REAL,  -- Initial deposit in 만원
-                        lease_monthly_payment REAL,  -- Monthly payment in 만원
+                        true_price REAL,  -- Total cost in millions (same as price for purchases, calculated for leases)
+                        lease_deposit REAL,  -- Initial deposit in millions
+                        lease_monthly_payment REAL,  -- Monthly payment in millions
                         lease_term_months INTEGER,  -- Lease term in months
-                        lease_total_monthly_cost REAL,  -- Total of all monthly payments in 만원
-                        raw_data TEXT
-                    )
+                                                               lease_total_monthly_cost REAL,  -- Total of all monthly payments in millions
+                                       final_payment REAL  -- Final payment at end of lease in millions
+                                   )
                 ''')
                 
                 # Create monitoring log table
@@ -130,13 +129,13 @@ class EncarDatabase:
     
     def parse_price_to_numeric(self, price_value) -> Optional[float]:
         """
-        Parse price value and return in 만원 (million won) format.
+        Parse price value and return in millions format.
         
         Args:
             price_value: Price in various formats
             
         Returns:
-            Price in 만원 as float, or None if parsing fails
+            Price in millions as float, or None if parsing fails
         """
         if not price_value:
             return None
@@ -218,22 +217,32 @@ class EncarDatabase:
                 
                 # Parse additional data
                 days_since_reg = self.calculate_days_since_registration(listing_data.get('registration_date', ''))
-                price_numeric = self.parse_price_to_numeric(listing_data.get('price', ''))
+                price_millions = self.parse_price_to_numeric(listing_data.get('price', ''))
                 
                 # Extract lease information
                 is_lease = listing_data.get('is_lease', False)
-                true_price = listing_data.get('true_price', price_numeric)  # Default to price_numeric for purchases
                 lease_info = listing_data.get('lease_info', {})
                 
-                # Extract lease components
+                # Extract lease components with new variable naming
+                estimated_price = lease_info.get('estimated_price') if lease_info else None  # Previously 'true_price'
+                total_cost = lease_info.get('total_cost') if lease_info else None  # This will be mapped to 'true_price' in DB
                 lease_deposit = lease_info.get('deposit') if lease_info else None
                 lease_monthly_payment = lease_info.get('monthly_payment') if lease_info else None
                 lease_term_months = lease_info.get('lease_term_months') if lease_info else None
+                final_payment = lease_info.get('final_payment') if lease_info else None
+                
                 # Calculate total monthly cost if we have monthly payment and term
                 if lease_monthly_payment and lease_term_months:
                     lease_total_monthly_cost = lease_monthly_payment * lease_term_months
                 else:
                     lease_total_monthly_cost = lease_info.get('total_monthly_cost') if lease_info else None
+                
+                # Map variables to database columns:
+                # - estimated_price -> price (for lease vehicles)
+                # - total_cost -> true_price (for lease vehicles)
+                # - For non-lease vehicles, use price_millions for both price and true_price
+                db_price = estimated_price if is_lease and estimated_price is not None else price_millions
+                db_true_price = total_cost if is_lease and total_cost is not None else price_millions
                 
                 # Determine if truly new (only if config provided)
                 is_truly_new = False
@@ -247,21 +256,20 @@ class EncarDatabase:
                             title = ?, model = ?, year = ?, price = ?, mileage = ?,
                             views = ?, registration_date = ?, listing_url = ?, 
                             last_updated = CURRENT_TIMESTAMP, 
-                            is_coupe = ?, days_since_registration = ?, price_numeric = ?,
-                            is_lease = ?, true_price = ?, lease_deposit = ?, 
-                            lease_monthly_payment = ?, lease_term_months = ?, 
-                            lease_total_monthly_cost = ?, raw_data = ?
-                        WHERE car_id = ?
+                            is_coupe = ?, days_since_registration = ?,
+                                                                      is_lease = ?, true_price = ?, lease_deposit = ?, 
+                                          lease_monthly_payment = ?, lease_term_months = ?, 
+                                          lease_total_monthly_cost = ?, final_payment = ?
+                                      WHERE car_id = ?
                     ''', (
                         listing_data['title'], listing_data['model'], 
-                        listing_data['year'], listing_data['price'],
+                        listing_data['year'], db_price,  # Use mapped price
                         listing_data['mileage'], listing_data['views'],
                         listing_data['registration_date'], listing_data['listing_url'],
-                        listing_data['is_coupe'], days_since_reg, price_numeric,
-                        is_lease, true_price, lease_deposit,
+                        listing_data['is_coupe'], days_since_reg,
+                        is_lease, db_true_price, lease_deposit,  # Use mapped true_price
                         lease_monthly_payment, lease_term_months,
-                        lease_total_monthly_cost,
-                        json.dumps(listing_data, ensure_ascii=False),
+                        lease_total_monthly_cost, final_payment,
                         listing_data['car_id']
                     ))
                     
@@ -274,19 +282,19 @@ class EncarDatabase:
                         INSERT INTO listings (
                             car_id, title, model, year, price, mileage, views,
                             registration_date, listing_url, is_coupe, is_truly_new, 
-                            days_since_registration, price_numeric, is_lease, true_price,
-                            lease_deposit, lease_monthly_payment, lease_term_months,
-                            lease_total_monthly_cost, raw_data
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            days_since_registration, is_lease, true_price,
+                                                                      lease_deposit, lease_monthly_payment, lease_term_months,
+                                          lease_total_monthly_cost, final_payment
+                                      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (
                         listing_data['car_id'], listing_data['title'], 
                         listing_data['model'], listing_data['year'],
-                        listing_data['price'], listing_data['mileage'],
+                        db_price, listing_data['mileage'],  # Use mapped price
                         listing_data['views'], listing_data['registration_date'],
                         listing_data['listing_url'], listing_data['is_coupe'], 
-                        is_truly_new, days_since_reg, price_numeric, is_lease, true_price,
-                        lease_deposit, lease_monthly_payment, lease_term_months,
-                        lease_total_monthly_cost, json.dumps(listing_data, ensure_ascii=False)
+                        is_truly_new, days_since_reg, is_lease, db_true_price,  # Use mapped true_price
+                                                              lease_deposit, lease_monthly_payment, lease_term_months,
+                                      lease_total_monthly_cost, final_payment
                     ))
                     
                     conn.commit()
@@ -334,11 +342,23 @@ class EncarDatabase:
                     update_values.append(is_lease)
                 
                 if lease_info is not None:
-                    # Extract lease components
+                    # Extract lease components with new variable naming
+                    estimated_price = lease_info.get('estimated_price')  # Previously 'true_price'
+                    total_cost = lease_info.get('total_cost')  # This will be mapped to 'true_price' in DB
                     lease_deposit = lease_info.get('deposit')
                     lease_monthly_payment = lease_info.get('monthly_payment')
                     lease_term_months = lease_info.get('lease_term_months')
                     lease_total_monthly_cost = lease_info.get('total_monthly_cost')
+                    final_payment = lease_info.get('final_payment')
+                    
+                    # Map variables to database columns
+                    if estimated_price is not None:
+                        update_fields.append("price = ?")
+                        update_values.append(estimated_price)
+                    
+                    if total_cost is not None:
+                        update_fields.append("true_price = ?")
+                        update_values.append(total_cost)
                     
                     if lease_deposit is not None:
                         update_fields.append("lease_deposit = ?")
@@ -355,6 +375,10 @@ class EncarDatabase:
                     if lease_total_monthly_cost is not None:
                         update_fields.append("lease_total_monthly_cost = ?")
                         update_values.append(lease_total_monthly_cost)
+                    
+                    if final_payment is not None:
+                        update_fields.append("final_payment = ?")
+                        update_values.append(final_payment)
                 
                 # Always update the last_updated timestamp
                 update_fields.append("last_updated = CURRENT_TIMESTAMP")

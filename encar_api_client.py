@@ -10,7 +10,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
 from playwright.async_api import async_playwright
-from monetary_utils import convert_manwon_to_won
+# Removed deprecated convert_manwon_to_won import
 
 class EncarAPIClient:
     def __init__(self, config: dict):
@@ -145,16 +145,23 @@ class EncarAPIClient:
             elif year_max:
                 filter_parts.append(f"Year.range(..{year_max}99)")
         
-        # Price range filter (in 만원)
+        # Price range filter (convert from millions to 만원 units)
         if 'price_min' in filters or 'price_max' in filters:
             price_min = filters.get('price_min', '')
             price_max = filters.get('price_max', '')
+            
+            # Convert from millions to 만원 units (e.g., 90M -> 9000만원)
+            if price_min:
+                price_min_manwon = int(float(price_min) * 100)
+            if price_max:
+                price_max_manwon = int(float(price_max) * 100)
+            
             if price_min and price_max:
-                filter_parts.append(f"Price.range({price_min}..{price_max})")
+                filter_parts.append(f"Price.range({price_min_manwon}..{price_max_manwon})")
             elif price_min:
-                filter_parts.append(f"Price.range({price_min}..)")
+                filter_parts.append(f"Price.range({price_min_manwon}..)")
             elif price_max:
-                filter_parts.append(f"Price.range(..{price_max})")
+                filter_parts.append(f"Price.range(..{price_max_manwon})")
         
         # Mileage filter (in km)
         if 'mileage_max' in filters:
@@ -305,8 +312,9 @@ class EncarAPIClient:
             price_manwon = item.get('Price', 0)  # API returns prices in 만원
             mileage = item.get('Mileage', 0)
             
-            # Convert prices to actual won amounts
-            price_won = convert_manwon_to_won(price_manwon)
+            # Convert API prices from 만원 format to millions format
+            # API returns 6290만원, we need to store as 62.9 million won
+            price_millions = price_manwon / 100.0 if price_manwon else 0
             
             # Check if it's a coupe
             is_coupe = self.is_coupe_model(model, badge)
@@ -323,23 +331,23 @@ class EncarAPIClient:
             
             if is_lease:
                 lease_info = self.extract_lease_info(item)
-                # Convert lease prices to won amounts
+                # Convert lease prices from 만원 format to millions format
                 if lease_info:
-                    lease_info['deposit'] = convert_manwon_to_won(lease_info.get('deposit', 0))
-                    lease_info['monthly_payment'] = convert_manwon_to_won(lease_info.get('monthly_payment', 0))
-                    lease_info['total_cost'] = convert_manwon_to_won(lease_info.get('total_cost', 0))
-                    true_price = lease_info.get('total_cost', price_won)
+                    lease_info['deposit'] = lease_info.get('deposit', 0) / 100.0 if lease_info.get('deposit', 0) else 0
+                    lease_info['monthly_payment'] = lease_info.get('monthly_payment', 0) / 100.0 if lease_info.get('monthly_payment', 0) else 0
+                    lease_info['total_cost'] = lease_info.get('total_cost', 0) / 100.0 if lease_info.get('total_cost', 0) else 0
+                    true_price = lease_info.get('total_cost', price_millions)
                 else:
-                    true_price = price_won
+                    true_price = price_millions
             else:
-                true_price = price_won
+                true_price = price_millions
             
             listing = {
                 'car_id': car_id,
                 'title': title,
                 'listing_url': listing_url,
-                'price': price_won,  # Original listed price in won
-                'true_price': true_price,  # True cost in won (higher for leases)
+                'price': price_millions,  # Original listed price in millions
+                'true_price': true_price,  # True cost in millions (higher for leases)
                 'year': str(year),
                 'mileage': mileage,
                 'model': model,
