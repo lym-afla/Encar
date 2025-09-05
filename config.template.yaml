@@ -72,7 +72,7 @@ api_integration:
 
 # Database Settings
 database:
-  filename: "encar_listings.db"
+  filename: "data/encar_listings.db"
   backup_days: 30  # Keep data for 30 days
   
   # Track listing lifecycle
