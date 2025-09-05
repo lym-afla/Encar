@@ -34,7 +34,7 @@ class EncarMonitorAPI:
             level=logging.INFO,
             format='[%(asctime)s] %(levelname)s:%(name)s:%(message)s',
             handlers=[
-                logging.FileHandler('encar_monitor.log', encoding='utf-8'),
+                logging.FileHandler('logs/encar_monitor.log', encoding='utf-8'),
                 logging.StreamHandler(sys.stdout)
             ],
             force=True  # Override any existing configuration
