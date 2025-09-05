@@ -14,7 +14,7 @@ NC='\033[0m' # No Color
 # Configuration
 APP_NAME="encar-monitor"
 INSTALL_DIR="/opt/${APP_NAME}"
-SERVICE_USER="ubuntu"
+SERVICE_USER="$USER"
 PYTHON_VERSION="3.10"
 
 echo -e "${BLUE}🚀 Starting Encar Monitor Installation...${NC}"
