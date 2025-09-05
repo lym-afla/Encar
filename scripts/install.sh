@@ -40,7 +40,8 @@ fi
 
 # Update system packages
 print_status "Updating system packages..."
-sudo apt update && sudo apt upgrade -y
+sudo apt update
+# sudo apt upgrade -y # Takes a long time to download and install
 
 # Install system dependencies
 print_status "Installing system dependencies..."
