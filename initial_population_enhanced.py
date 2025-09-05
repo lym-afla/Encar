@@ -14,6 +14,13 @@ from notification import NotificationManager
 async def run_enhanced_initial_population():
     """Populate database with 2021+ vehicles under 90 million won, then extract detailed info"""
 
+    # Set up logging
+    logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+    
+    # Load config
+    with open('config.yaml', 'r', encoding='utf-8') as f:
+        config = yaml.safe_load(f)
+
     # Define filters for 2021+ vehicles under 90 million won
     filters = {
         'year_min': int(config['search']['year_range'].split('..')[0][:4]),  # Extract year from "202100.."
@@ -31,13 +38,6 @@ async def run_enhanced_initial_population():
     print("  🚗 Model: Mercedes-Benz GLE-Class")
     print("  🎯 Vehicle Type: Coupe only")
     print()
-    
-    # Set up logging
-    logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
-    
-    # Load config
-    with open('config.yaml', 'r', encoding='utf-8') as f:
-        config = yaml.safe_load(f)
     
     # Initialize components
     database = EncarDatabase(config['database']['filename'])
