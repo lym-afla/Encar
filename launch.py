@@ -27,9 +27,10 @@ def print_menu():
     print("4. 📊 Check System Status")
     print("5. 📁 Export Data to CSV")
     print("6. 🛠️  Test Browser & Tooltip Extraction")
-    print("7. ⚙️  System Information")
-    print("8. 📖 View Configuration")
-    print("9. ❌ Exit")
+    print("7. 🔒 Run Closure Scan")
+    print("8. ⚙️  System Information")
+    print("9. 📖 View Configuration")
+    print("10. ❌ Exit")
     print()
 
 def run_command(command, description):
@@ -119,19 +120,19 @@ def main():
                 print("⚠️  This will run indefinitely until stopped with Ctrl+C")
                 confirm = input("Continue? (y/N): ").lower()
                 if confirm == 'y':
-                    run_command("python encar_monitor.py", "Continuous Monitoring")
+                    run_command("python encar_monitor_api.py", "Continuous Monitoring")
             
             elif choice == '2':
-                run_command("python encar_monitor.py --mode test", "Test Cycle")
+                run_command("python encar_monitor_api.py --mode test", "Test Cycle")
             
             elif choice == '3':
-                run_command("python encar_monitor.py --mode monitor --quick", "Quick Scan")
+                run_command("python encar_monitor_api.py --mode start --quick", "Quick Scan")
             
             elif choice == '4':
-                run_command("python encar_monitor.py --mode status", "System Status Check")
+                run_command("python encar_monitor_api.py --mode status", "System Status Check")
             
             elif choice == '5':
-                run_command("python encar_monitor.py --mode export", "Data Export")
+                run_command("python encar_monitor_api.py --mode export", "Data Export")
             
             elif choice == '6':
                 print("\n🛠️  TESTING MENU:")
@@ -151,17 +152,39 @@ def main():
                     print("❌ Invalid choice")
             
             elif choice == '7':
-                run_command("python utils.py --info", "System Information")
+                print("\n🔒 CLOSURE SCAN MENU:")
+                print("1. Quick Closure Scan (5 listings)")
+                print("2. Full Closure Scan")
+                print("3. Custom Closure Scan")
+                print("4. View Closure Statistics")
+                
+                closure_choice = input("Choose option (1-4): ").strip()
+                
+                if closure_choice == '1':
+                    run_command("python encar_monitor_api.py --mode closure --max-listings 5", "Quick Closure Scan")
+                elif closure_choice == '2':
+                    run_command("python encar_monitor_api.py --mode closure", "Full Closure Scan")
+                elif closure_choice == '3':
+                    max_listings = input("Enter max listings to check: ").strip()
+                    max_age = input("Enter max age in days (default 7): ").strip() or "7"
+                    run_command(f"python encar_monitor_api.py --mode closure --max-listings {max_listings} --max-age {max_age}", "Custom Closure Scan")
+                elif closure_choice == '4':
+                    run_command("python closure_scanner.py --stats", "Closure Statistics")
+                else:
+                    print("❌ Invalid choice")
             
             elif choice == '8':
-                view_config()
+                run_command("python utils.py --info", "System Information")
             
             elif choice == '9':
+                view_config()
+            
+            elif choice == '10':
                 print("\n👋 Goodbye! Happy car hunting!")
                 break
             
             else:
-                print("❌ Invalid choice. Please enter 1-9.")
+                print("❌ Invalid choice. Please enter 1-10.")
                 input("Press Enter to continue...")
         
         except KeyboardInterrupt:

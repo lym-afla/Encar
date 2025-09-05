@@ -219,7 +219,7 @@ class EncarScraperAPI:
         browser = None
         try:
             async with async_playwright() as p:
-                browser = await p.chromium.launch(headless=True)
+                browser = await p.chromium.launch(headless=self.api_client.config['browser']['headless'])
                 page = await browser.new_page()
                 
                 # Navigate to the page with better error handling

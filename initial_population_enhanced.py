@@ -13,6 +13,12 @@ from notification import NotificationManager
 
 async def run_enhanced_initial_population():
     """Populate database with 2021+ vehicles under 90 million won, then extract detailed info"""
+
+    # Define filters for 2021+ vehicles under 90 million won
+    filters = {
+        'year_min': int(config['search']['year_range'].split('..')[0][:4]),  # Extract year from "202100.."
+        'price_max': int(config['search']['price_range'].split('..')[1]) / 100  # Convert "..9000" to 90
+    }
     
     print("🚀 ENHANCED INITIAL DATABASE POPULATION")
     print("=" * 60)
@@ -20,8 +26,8 @@ async def run_enhanced_initial_population():
     print("Phase 2: Browser-based registration_date and views extraction")
     print()
     print("Filters:")
-    print("  📅 Year: 2021 or newer")
-    print("  💰 Price: ≤9,000만원 (90 million won)")
+    print(f"  📅 Year: {filters['year_min']}+ or newer")
+    print(f"  💰 Price: ≤{filters['price_max']} million won")
     print("  🚗 Model: Mercedes-Benz GLE-Class")
     print("  🎯 Vehicle Type: Coupe only")
     print()
@@ -47,16 +53,10 @@ async def run_enhanced_initial_population():
             is_first = database.is_first_run()
             print(f"📋 First run: {is_first}")
             
-            # Define filters for 2021+ vehicles under 90 million won
-            filters = {
-                'year_min': 2021,      # 2021 or newer
-                'price_max': 90      # 90 million won (API uses 만원 units)
-            }
-            
             print(f"📊 Getting total count...")
             total_count = await scraper.get_total_available_count()
             print(f"📈 Total GLE vehicles available: {total_count:,}")
-            print(f"📋 Will filter for 2021+ and ≤9000만원 during scraping")
+            print(f"📋 Will filter for {filters['year_min']}+ and ≤{filters['price_max']}만원 during scraping")
             
             # Calculate how many pages to scan for good coverage of filtered results
             vehicles_per_page = 20
@@ -177,8 +177,8 @@ async def run_enhanced_initial_population():
             
             print()
             
-            # Price distribution using true_price for leases
-            print("💰 PRICE DISTRIBUTION (True Cost):")
+            # Price distribution
+            print("💰 PRICE DISTRIBUTION:")
             price_ranges = {
                 'Under 5000만원': 0,
                 '5000-7000만원': 0,
@@ -186,14 +186,14 @@ async def run_enhanced_initial_population():
             }
             
             for listing in coupe_listings:
-                true_price = listing.get('true_price', listing.get('price', 0))
+                true_price = listing.get('price', 0)
                 if isinstance(true_price, (int, float)):
-                    if true_price < 50000000:
-                        price_ranges['Under 5000만원'] += 1
-                    elif true_price < 70000000:
-                        price_ranges['5000-7000만원'] += 1
+                    if true_price < 50:
+                        price_ranges['Under 50 million won'] += 1
+                    elif true_price < 70:
+                        price_ranges['50-70 million won'] += 1
                     else:
-                        price_ranges['7000-9000만원'] += 1
+                        price_ranges['70-90 million won'] += 1
             
             for range_name, count in price_ranges.items():
                 print(f"   {range_name}: {count} vehicles")

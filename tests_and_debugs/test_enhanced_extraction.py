@@ -40,9 +40,9 @@ async def test_enhanced_extraction():
         return
     
     # Test URL (same as in debug script)
-    test_url = "https://fem.encar.com/cars/detail/39940079"
+    test_url = "https://fem.encar.com/cars/detail/39379103"
     test_listing = {
-        'car_id': '39940079',
+        'car_id': '39379103',
         'title': 'Test Vehicle',
         'is_lease': False
     }

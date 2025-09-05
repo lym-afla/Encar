@@ -35,7 +35,20 @@ class EncarAPIClient:
         
     async def __aenter__(self):
         """Async context manager entry"""
-        self.http_session = aiohttp.ClientSession()
+        # Create session with better connector configuration
+        connector = aiohttp.TCPConnector(
+            limit=100,
+            ttl_dns_cache=300,
+            use_dns_cache=True,
+        )
+        
+        # Create session with timeout and proxy support
+        timeout = aiohttp.ClientTimeout(total=30, connect=10)
+        self.http_session = aiohttp.ClientSession(
+            connector=connector,
+            timeout=timeout,
+            trust_env=True  # Respect proxy environment variables
+        )
         return self
         
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -63,38 +76,67 @@ class EncarAPIClient:
                 search_url = self.build_search_url()
                 self.logger.info(f"Navigating to: {search_url}")
                 
-                await page.goto(search_url)
-                await page.wait_for_timeout(5000)  # Increased wait time
-                
-                # Try to find any car listings to confirm page loaded
                 try:
-                    await page.wait_for_selector('.listWrap, .list_wrap, [data-testid="car-list"], .itemWrap', timeout=15000)
-                    self.logger.info("Search page loaded successfully")
-                except:
-                    self.logger.warning("Could not confirm page load, continuing...")
-                    # Debug: check what's on the page
+                    # Use shorter timeout and better error handling
+                    await page.goto(search_url, wait_until='domcontentloaded', timeout=20000)
+                    self.logger.info("Initial page load completed")
+                    
+                    # Wait a bit for dynamic content
+                    await page.wait_for_timeout(3000)
+                    
+                    # Check what we got
                     page_title = await page.title()
                     page_url = page.url
                     self.logger.info(f"   Page title: {page_title}")
                     self.logger.info(f"   Page URL: {page_url}")
+                    
+                    # Try to find car listings with more relaxed criteria
+                    try:
+                        await page.wait_for_selector('body', timeout=5000)  # Just ensure page is ready
+                        self.logger.info("Page body loaded")
+                        
+                        # Check for any indicators that we're on the right page
+                        content = await page.content()
+                        if 'encar' in content.lower() or '벤츠' in content or 'gle' in content.lower():
+                            self.logger.info("Detected Encar content on page")
+                        else:
+                            self.logger.warning("Page content doesn't look like Encar, but continuing...")
+                            
+                    except Exception as e:
+                        self.logger.warning(f"Could not find expected elements: {e}")
+                        
+                except Exception as e:
+                    self.logger.warning(f"Page navigation issue: {e}")
+                    # Continue anyway - we might still be able to extract cookies
+                    page_title = await page.title()
+                    self.logger.info(f"   Current page title: {page_title}")
                 
                 # Extract cookies
                 cookies = await context.cookies()
                 self.session_cookies = {cookie['name']: cookie['value'] for cookie in cookies}
                 self.logger.info(f"Extracted {len(self.session_cookies)} cookies")
                 
-                # Build session headers
+                # Extract exact User-Agent from browser
+                user_agent = await page.evaluate('navigator.userAgent')
+                self.logger.info(f"Browser User-Agent: {user_agent}")
+                
+                # Build session headers to exactly match browser
                 self.session_headers = {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
+                    'User-Agent': user_agent,
                     'Accept': 'application/json, text/plain, */*',
-                    'Accept-Language': 'en-US,en;q=0.9,ko;q=0.8',
-                    'Accept-Encoding': 'gzip, deflate, br',
-                    'Referer': 'http://www.encar.com/',
+                    'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+                    'Accept-Encoding': 'gzip, deflate, br, zstd',
+                    'Referer': search_url,  # Use the actual page we visited
                     'Origin': 'http://www.encar.com',
                     'X-Requested-With': 'XMLHttpRequest',
                     'Sec-Fetch-Dest': 'empty',
-                    'Sec-Fetch-Mode': 'cors',
-                    'Sec-Fetch-Site': 'same-site'
+                    'Sec-Fetch-Mode': 'cors', 
+                    'Sec-Fetch-Site': 'same-site',
+                    'sec-ch-ua': '"Chromium";v="138", "Google Chrome";v="138", "Not=A?Brand";v="99"',
+                    'sec-ch-ua-mobile': '?0',
+                    'sec-ch-ua-platform': '"Windows"',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
                 }
                 
                 await browser.close()
@@ -115,9 +157,8 @@ class EncarAPIClient:
     
     def build_search_url(self) -> str:
         """Build search URL for browser navigation"""
-        # Use the actual working URL from our browser analysis
-        # Navigate to the specific GLE search page
-        return "http://www.encar.com/fc/fc_carsearchlist.do?carType=for#!%7B%22action%22%3A%22(And.Hidden.N._.(C.CarType.N._.(C.Manufacturer.%EB%B2%A4%EC%B8%A0._.ModelGroup.GLE-%ED%81%B4%EB%9E%98%EC%8A%A4.))_.Year.range(202100..)._.Price.range(..9000).)%22%2C%22toggle%22%3A%7B%7D%2C%22layer%22%3A%22%22%2C%22sort%22%3A%22ModifiedDate%22%2C%22page%22%3A1%2C%22limit%22%3A20%2C%22searchKey%22%3A%22%22%2C%22loginCheck%22%3Afalse%7D"
+        # Use simpler URL first to establish session, then redirect to specific search
+        return "http://www.encar.com/"
     
     def build_api_query(self, filters: dict = None) -> str:
         """Build API query string with advanced filtering support"""
@@ -191,8 +232,66 @@ class EncarAPIClient:
         self.logger.info("Authentication expired, refreshing...")
         return await self.extract_authentication()
     
-    async def make_api_request(self, endpoint: str, params: dict) -> Optional[dict]:
-        """Make authenticated API request"""
+    async def make_api_request_with_browser(self, endpoint: str, params: dict) -> Optional[dict]:
+        """Make API request using Playwright - fallback for 407 errors"""
+        try:
+            self.logger.info(f"Using browser for API request: {endpoint}")
+            
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(
+                    headless=self.config['browser']['headless']
+                )
+                
+                context = await browser.new_context()
+                page = await context.new_page()
+                
+                # Build URL with parameters
+                param_string = '&'.join([f"{k}={v}" for k, v in params.items()])
+                api_url = f"{endpoint}?{param_string}"
+                
+                self.logger.info(f"Browser API URL: {api_url}")
+                
+                # Navigate to API endpoint 
+                response = await page.goto(api_url)
+                
+                if response.status == 200:
+                    # Get JSON response
+                    content = await page.content()
+                    
+                    # Try to extract JSON from page
+                    if '<pre>' in content:
+                        # JSON is wrapped in <pre> tags
+                        import re
+                        json_match = re.search(r'<pre[^>]*>(.*?)</pre>', content, re.DOTALL)
+                        if json_match:
+                            json_text = json_match.group(1)
+                            import json
+                            data = json.loads(json_text)
+                            await browser.close()
+                            return data
+                    
+                    # Try to get JSON directly
+                    try:
+                        json_text = await page.evaluate('document.body.innerText')
+                        import json
+                        data = json.loads(json_text)
+                        await browser.close()
+                        return data
+                    except:
+                        pass
+                
+                await browser.close()
+                self.logger.error(f"Browser API request failed: {response.status if response else 'No response'}")
+                return None
+                
+        except Exception as e:
+            self.logger.error(f"Browser API request error: {e}")
+            return None
+    
+    async def make_api_request(self, endpoint: str, params: dict, retry_count: int = 0) -> Optional[dict]:
+        """Make authenticated API request with retry logic"""
+        max_retries = 3
+        
         try:
             if not await self.ensure_authenticated():
                 raise Exception("Failed to authenticate")
@@ -204,12 +303,15 @@ class EncarAPIClient:
             
             self.logger.info(f"API Request: {endpoint}")
             self.logger.info(f"   Parameters: {params}")
+            self.logger.info(f"   Headers count: {len(headers)}")
+            self.logger.info(f"   Cookies count: {len(self.session_cookies)}")
             
             async with self.http_session.get(
                 endpoint,
                 params=params,
                 headers=headers,
-                timeout=aiohttp.ClientTimeout(total=30)
+                ssl=False,  # Disable SSL verification for potential proxy issues
+                allow_redirects=True
             ) as response:
                 
                 self.logger.info(f"   Status: {response.status}")
@@ -218,14 +320,51 @@ class EncarAPIClient:
                     data = await response.json()
                     self.logger.info(f"   Success! Response keys: {list(data.keys()) if isinstance(data, dict) else 'Not dict'}")
                     return data
+                    
                 elif response.status == 407:
-                    self.logger.warning("Authentication failed (407), will refresh on next call")
-                    self.auth_valid_until = None  # Force re-auth
-                    return None
+                    self.logger.warning(f"Proxy authentication required (407) - trying browser fallback")
+                    
+                    # Try using browser to make the request directly
+                    browser_result = await self.make_api_request_with_browser(endpoint, params)
+                    if browser_result:
+                        self.logger.info("Browser fallback successful!")
+                        return browser_result
+                    
+                    # If browser also fails, try re-auth
+                    if retry_count < max_retries:
+                        self.logger.info(f"Retry {retry_count + 1}/{max_retries}: Re-extracting authentication...")
+                        self.auth_valid_until = None  # Force re-auth
+                        await asyncio.sleep(2)  # Wait before retry
+                        return await self.make_api_request(endpoint, params, retry_count + 1)
+                    else:
+                        self.logger.error("Max retries reached for 407 error")
+                        return None
+                        
+                elif response.status in [403, 401]:
+                    self.logger.warning(f"Authentication/Authorization failed ({response.status})")
+                    response_text = await response.text()
+                    self.logger.debug(f"Response body: {response_text[:500]}")
+                    
+                    if retry_count < max_retries:
+                        self.logger.info(f"Retry {retry_count + 1}/{max_retries}: Re-extracting authentication...")
+                        self.auth_valid_until = None  # Force re-auth
+                        await asyncio.sleep(2)
+                        return await self.make_api_request(endpoint, params, retry_count + 1)
+                    else:
+                        return None
+                        
                 else:
                     self.logger.error(f"API request failed: {response.status}")
+                    response_text = await response.text()
+                    self.logger.debug(f"Response body: {response_text[:500]}")
                     return None
                     
+        except aiohttp.ClientProxyConnectionError as e:
+            self.logger.error(f"Proxy connection error: {e}")
+            return None
+        except aiohttp.ClientConnectorError as e:
+            self.logger.error(f"Connection error: {e}")
+            return None
         except Exception as e:
             self.logger.error(f"API request error: {e}")
             return None
@@ -476,6 +615,46 @@ class EncarAPIClient:
         try:
             self.logger.info("Testing API connectivity...")
             
+            # First try a direct API call without authentication
+            self.logger.info("Trying direct API call without authentication...")
+            try:
+                query = self.build_api_query()
+                params = {
+                    'count': 'true',
+                    'q': query,
+                    'sr': '|ModifiedDate|0|5'
+                }
+                
+                # Simple headers without authentication
+                simple_headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'Accept': 'application/json, text/plain, */*',
+                    'Referer': 'http://www.encar.com/'
+                }
+                
+                async with self.http_session.get(
+                    self.endpoints['general'],
+                    params=params,
+                    headers=simple_headers,
+                    timeout=aiohttp.ClientTimeout(total=10)
+                ) as response:
+                    self.logger.info(f"Direct API test - Status: {response.status}")
+                    if response.status == 200:
+                        data = await response.json()
+                        count = data.get('Count', 0)
+                        if count > 0:
+                            self.logger.info(f"✅ Direct API works! Total vehicles: {count}")
+                            return True
+                    elif response.status == 407:
+                        self.logger.info("Direct API failed with 407 - need authentication")
+                    else:
+                        self.logger.info(f"Direct API failed with status: {response.status}")
+                        
+            except Exception as e:
+                self.logger.info(f"Direct API test failed: {e}")
+            
+            # If direct call fails, try with authentication
+            self.logger.info("Trying with authentication extraction...")
             total_count = await self.get_total_count()
             if total_count > 0:
                 self.logger.info(f"API working! Total vehicles: {total_count}")

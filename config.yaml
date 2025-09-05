@@ -52,7 +52,7 @@ monitoring:
     max_adaptive_pages: 8  # Cap for adaptive increases
     
   # Performance settings
-  check_interval_minutes: 10  # How often to check for new listings
+  check_interval_minutes: 15  # How often to check for new listings
   notification_threshold: 5  # Send notification if views < this number
   
   # Smart features
@@ -83,7 +83,22 @@ notifications:
   methods:
     - console  # Print to console
     - file     # Save to log file
+    - telegram # Send to Telegram bot
   log_file: "encar_alerts.log"
+  
+  # Telegram Bot Configuration
+  telegram:
+    enabled: true
+    bot_token: "8335770795:AAEB4AX239z5n1goPMdrxtju1cyUvOeEJyg"  # Your bot token
+    chat_id: "404346140"      # Your Telegram chat ID
+    
+    # Message formatting
+    parse_mode: "HTML"  # HTML or Markdown
+    disable_web_page_preview: false
+    
+    # Rate limiting
+    max_messages_per_minute: 20
+    message_timeout: 30  # seconds
   
   # Different alert levels
   immediate_alert: true      # For very fresh listings

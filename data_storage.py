@@ -9,6 +9,7 @@ class EncarDatabase:
     def __init__(self, db_path: str = "encar_listings.db"):
         """Initialize database connection and create tables if needed."""
         self.db_path = db_path
+        self.logger = logging.getLogger(__name__)
         self.init_database()
         
     def init_database(self):
@@ -42,8 +43,12 @@ class EncarDatabase:
                         lease_deposit REAL,  -- Initial deposit in millions
                         lease_monthly_payment REAL,  -- Monthly payment in millions
                         lease_term_months INTEGER,  -- Lease term in months
-                                                               lease_total_monthly_cost REAL,  -- Total of all monthly payments in millions
-                                       final_payment REAL  -- Final payment at end of lease in millions
+                        lease_total_monthly_cost REAL,  -- Total of all monthly payments in millions
+                        final_payment REAL,  -- Final payment at end of lease in millions
+                        -- Closure tracking
+                        is_closed BOOLEAN DEFAULT 0,  -- Flag for closed/withdrawn listings
+                        closure_detected_at TIMESTAMP,  -- When closure was detected
+                        closure_type TEXT  -- Type: 'withdrawn', 'sold', 'error_404', etc.
                                    )
                 ''')
                 
@@ -70,11 +75,33 @@ class EncarDatabase:
                 
                 conn.commit()
                 
+                # Apply any needed schema updates
+                self._apply_schema_updates(cursor)
+                conn.commit()
+                
                 logging.info("Database initialized successfully")
                 
         except Exception as e:
             logging.error(f"Error initializing database: {e}")
             raise
+    
+    def _apply_schema_updates(self, cursor):
+        """Apply any needed schema updates for existing databases"""
+        try:
+            # Check if closure columns exist
+            cursor.execute("PRAGMA table_info(listings)")
+            columns = [column[1] for column in cursor.fetchall()]
+            
+            # Add closure tracking columns if they don't exist
+            if 'is_closed' not in columns:
+                logging.info("Adding closure tracking columns...")
+                cursor.execute("ALTER TABLE listings ADD COLUMN is_closed BOOLEAN DEFAULT 0")
+                cursor.execute("ALTER TABLE listings ADD COLUMN closure_detected_at TIMESTAMP")
+                cursor.execute("ALTER TABLE listings ADD COLUMN closure_type TEXT")
+                logging.info("✅ Closure tracking columns added")
+                
+        except Exception as e:
+            logging.warning(f"Schema update failed (this may be normal for new databases): {e}")
     
     def is_first_run(self) -> bool:
         """Check if this is the first run (database is empty)."""
@@ -401,21 +428,157 @@ class EncarDatabase:
             logging.error(f"Error updating listing {car_id}: {e}")
             return False
     
-    def get_truly_new_listings(self, config: Dict = None) -> List[Dict]:
-        """Get listings that are truly new based on the new architecture."""
+    def mark_listing_closed(self, car_id: str, closure_type: str = 'withdrawn') -> bool:
+        """
+        Mark a listing as closed/withdrawn.
+        
+        Args:
+            car_id: The car ID to mark as closed
+            closure_type: Type of closure ('withdrawn', 'sold', 'error_404', 'access_denied', etc.)
+        
+        Returns:
+            True if successfully marked as closed, False otherwise
+        """
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 
-                # Get listings marked as truly new
+                # Check if listing exists
+                cursor.execute("SELECT id FROM listings WHERE car_id = ?", (car_id,))
+                if not cursor.fetchone():
+                    logging.warning(f"Listing {car_id} not found for closure marking")
+                    return False
+                
+                # Update closure status
+                cursor.execute("""
+                    UPDATE listings 
+                    SET is_closed = 1,
+                        closure_detected_at = CURRENT_TIMESTAMP,
+                        closure_type = ?,
+                        last_updated = CURRENT_TIMESTAMP
+                    WHERE car_id = ?
+                """, (closure_type, car_id))
+                
+                conn.commit()
+                logging.info(f"✅ Marked listing {car_id} as closed ({closure_type})")
+                return True
+                
+        except Exception as e:
+            logging.error(f"Error marking listing {car_id} as closed: {e}")
+            return False
+    
+    def get_active_listings(self) -> List[Dict]:
+        """Get all active (non-closed) listings"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute("""
+                    SELECT car_id, title, listing_url, price, views, registration_date,
+                           is_lease, first_seen, last_updated
+                    FROM listings 
+                    WHERE is_closed = 0
+                    ORDER BY first_seen DESC
+                """)
+                
+                rows = cursor.fetchall()
+                
+                listings = []
+                for row in rows:
+                    listing = {
+                        'car_id': row[0],
+                        'title': row[1],
+                        'listing_url': row[2],
+                        'price': row[3],
+                        'views': row[4],
+                        'registration_date': row[5],
+                        'is_lease': bool(row[6]),
+                        'first_seen': row[7],
+                        'last_updated': row[8]
+                    }
+                    listings.append(listing)
+                
+                return listings
+                
+        except Exception as e:
+            logging.error(f"Error getting active listings: {e}")
+            return []
+    
+    def get_closure_statistics(self) -> Dict:
+        """Get statistics about closed listings"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Total listings
+                cursor.execute("SELECT COUNT(*) FROM listings")
+                total_listings = cursor.fetchone()[0]
+                
+                # Active listings
+                cursor.execute("SELECT COUNT(*) FROM listings WHERE is_closed = 0")
+                active_listings = cursor.fetchone()[0]
+                
+                # Closed listings
+                cursor.execute("SELECT COUNT(*) FROM listings WHERE is_closed = 1")
+                closed_listings = cursor.fetchone()[0]
+                
+                # Closed by type
+                cursor.execute("""
+                    SELECT closure_type, COUNT(*) 
+                    FROM listings 
+                    WHERE is_closed = 1 
+                    GROUP BY closure_type
+                """)
+                closure_types = dict(cursor.fetchall())
+                
+                return {
+                    'total_listings': total_listings,
+                    'active_listings': active_listings,
+                    'closed_listings': closed_listings,
+                    'closure_rate': f"{(closed_listings/total_listings*100):.1f}%" if total_listings > 0 else "0%",
+                    'closure_types': closure_types
+                }
+                
+        except Exception as e:
+            logging.error(f"Error getting closure statistics: {e}")
+            return {}
+    
+    def get_truly_new_listings(self, config: Dict = None, minutes_threshold: int = 15) -> List[Dict]:
+        """Get listings that are truly new based on recent first_seen timestamp."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Get listings that were first seen within the last X minutes AND are truly new
+                # This ensures we only get listings from the current monitoring cycle
+                threshold_time = datetime.now() - timedelta(minutes=minutes_threshold)
+                
                 cursor.execute('''
                     SELECT * FROM listings 
-                    WHERE is_truly_new = 1 AND is_coupe = 1 
+                    WHERE is_truly_new = 1 
+                      AND is_coupe = 1 
+                      AND first_seen >= ?
+                      AND is_closed = 0
                     ORDER BY first_seen DESC
-                ''')
+                ''', (threshold_time.strftime('%Y-%m-%d %H:%M:%S'),))
                 
                 columns = [description[0] for description in cursor.description]
-                return [dict(zip(columns, row)) for row in cursor.fetchall()]
+                listings = [dict(zip(columns, row)) for row in cursor.fetchall()]
+                
+                # Mark these listings as no longer "truly new" to avoid duplicate notifications
+                if listings:
+                    car_ids = [listing['car_id'] for listing in listings]
+                    placeholders = ','.join(['?' for _ in car_ids])
+                    cursor.execute(f'''
+                        UPDATE listings 
+                        SET is_truly_new = 0
+                        WHERE car_id IN ({placeholders})
+                    ''', car_ids)
+                    conn.commit()
+                    
+                    self.logger.info(f"📝 Marked {len(listings)} listings as processed (no longer truly new)")
+                
+                return listings
                 
         except Exception as e:
             logging.error(f"Error retrieving truly new listings: {e}")
