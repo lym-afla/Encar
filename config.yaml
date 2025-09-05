@@ -53,6 +53,7 @@ monitoring:
     
   # Performance settings
   check_interval_minutes: 15  # How often to check for new listings
+  quick_scan_interval_minutes: 5  # How often to check for new listings
   notification_threshold: 5  # Send notification if views < this number
   
   # Smart features

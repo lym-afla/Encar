@@ -199,48 +199,45 @@ class EncarMonitorAPI:
             
             # Process listings and find new ones
             new_count = 0
-            processed_listings = []
+            
+            notifications_sent = 0
+            enhanced_listings = []
             
             for listing in listings:
                 try:
                     result = self.database.save_listing(listing, self.config)
                     if result == 'new':
                         new_count += 1
-                        processed_listings.append(listing)
+                        
+                        # Send immediate notification if worthy (no timezone dependency)
+                        if self.is_listing_notification_worthy(listing):
+                            try:
+                                self.notifier.send_new_listing_alert(listing)
+                                notifications_sent += 1
+                                self.logger.info(f"📱 Sent immediate notification for car {listing['car_id']}")
+                                enhanced_listings.append(listing)  # Track for enhancement
+                            except Exception as e:
+                                self.logger.warning(f"⚠️ Could not send notification for {listing.get('car_id', 'unknown')}: {e}")
+                        
                 except Exception as e:
                     self.logger.warning(f"⚠️ Could not process listing {listing.get('id', 'unknown')}: {e}")
             
             self.new_listings_found += new_count
-            
-            # Check for truly new listings (registration date based)
-            truly_new_listings = self.database.get_truly_new_listings(self.config)
-            
-            if truly_new_listings:
-                self.logger.info(f"🎯 Found {len(truly_new_listings)} truly new listings!")
+            self.logger.info(f"🔍 Regular scan: {len(listings)} listings, {new_count} new, {notifications_sent} notifications sent")
                 
-                # Send individual notifications for each truly new listing
-                for listing in truly_new_listings:
+            
+            # Enhance notified listings with detailed data (for database improvement)
+            if len(enhanced_listings) > 0:
+                enhance_count = min(5, len(enhanced_listings))
+                self.logger.info(f"🔍 Processing {enhance_count} notified listings for enhanced data")
+                enhanced_data = await self.scraper.get_views_registration_and_lease_batch(enhanced_listings[:enhance_count])
+                
+                # Save enhanced data to database
+                for listing in enhanced_data:
                     try:
-                        # Send individual notification in the format requested
-                        self.notifier.send_new_listing_alert(listing)
-                        self.logger.info(f"📱 Sent notification for car {listing['car_id']}")
+                        self.database.save_listing(listing, self.config)
                     except Exception as e:
-                        self.logger.warning(f"⚠️ Could not send notification for {listing.get('car_id', 'unknown')}: {e}")
-                
-                # Enhance a subset of new listings with detailed data (for database improvement)
-                if len(truly_new_listings) > 0:
-                    enhance_count = min(5, len(truly_new_listings))
-                    self.logger.info(f"🔍 Processing {enhance_count} listings for enhanced data")
-                    enhanced_listings = await self.scraper.get_views_registration_and_lease_batch(truly_new_listings[:enhance_count])
-                    
-                    # Save enhanced data to database
-                    for listing in enhanced_listings:
-                        try:
-                            self.database.save_listing(listing, self.config)
-                        except Exception as e:
-                            self.logger.warning(f"⚠️ Could not save enhanced listing {listing.get('car_id', 'unknown')}: {e}")
-            else:
-                self.logger.info(f"📊 Scan completed: {len(listings)} listings processed, {new_count} new")
+                        self.logger.warning(f"⚠️ Could not save enhanced listing {listing.get('car_id', 'unknown')}: {e}")
             
             # # Adaptive page increase if finding many new listings
             # if regular_config.get('adaptive_increase', False) and new_count > 5:
@@ -252,6 +249,29 @@ class EncarMonitorAPI:
                     
         except Exception as e:
             self.logger.error(f"❌ Error in regular monitoring: {e}")
+    
+    def is_listing_notification_worthy(self, listing: Dict) -> bool:
+        """Determine if a listing should trigger a notification"""
+        
+        # Must be a coupe
+        if not listing.get('is_coupe', False):
+            return False
+        
+        # Check criteria from config
+        criteria = self.config.get('new_listing_criteria', {})
+        
+        # Very fresh (low views)
+        max_views = criteria.get('immediate_alert_max_views', 10)
+        if listing.get('views', 0) <= max_views:
+            return True
+        
+        # Recent registration
+        max_age_days = criteria.get('max_registration_age_days', 30)
+        days_since_reg = listing.get('days_since_registration')
+        if days_since_reg is not None and days_since_reg <= max_age_days:
+            return True
+        
+        return False
     
     async def run_quick_scan(self):
         """Run a quick scan for very recent listings"""
@@ -274,26 +294,23 @@ class EncarMonitorAPI:
             
             if listings:
                 new_count = 0
+                notifications_sent = 0
+                
                 for listing in listings:
                     result = self.database.save_listing(listing, self.config)
                     if result == 'new':
                         new_count += 1
+                        
+                        # Send immediate notification if worthy (no timezone dependency)
+                        if self.is_listing_notification_worthy(listing):
+                            try:
+                                self.notifier.send_new_listing_alert(listing)
+                                notifications_sent += 1
+                                self.logger.info(f"📱 Sent immediate notification for car {listing['car_id']}")
+                            except Exception as e:
+                                self.logger.warning(f"⚠️ Could not send notification for {listing.get('car_id', 'unknown')}: {e}")
                 
-                # Check for truly new listings
-                truly_new_listings = self.database.get_truly_new_listings(self.config)
-                
-                if truly_new_listings:
-                    self.logger.info(f"🔥 Found {len(truly_new_listings)} very fresh listings!")
-                    
-                    # Send individual notifications for each truly new listing
-                    for listing in truly_new_listings:
-                        try:
-                            self.notifier.send_new_listing_alert(listing)
-                            self.logger.info(f"📱 Sent notification for car {listing['car_id']}")
-                        except Exception as e:
-                            self.logger.warning(f"⚠️ Could not send notification for {listing.get('car_id', 'unknown')}: {e}")
-                
-                self.logger.info(f"⚡ Quick scan: {len(listings)} listings, {new_count} new")
+                self.logger.info(f"⚡ Quick scan: {len(listings)} listings, {new_count} new, {notifications_sent} notifications sent")
             else:
                 self.logger.info("⚡ Quick scan: no listings found")
                 
@@ -380,8 +397,9 @@ class EncarMonitorAPI:
             interval_minutes = self.config['monitoring']['check_interval_minutes']
             schedule.every(interval_minutes).minutes.do(lambda: asyncio.create_task(self.run_monitoring_cycle()))
             
-            # Quick scans every 5 minutes
-            schedule.every(5).minutes.do(lambda: asyncio.create_task(self.run_quick_scan()))
+            # Quick scans every 5 minutes (with config fallback)
+            quick_scan_interval = self.config['monitoring'].get('quick_scan_interval_minutes', 5)
+            schedule.every(quick_scan_interval).minutes.do(lambda: asyncio.create_task(self.run_quick_scan()))
             
             # Daily summary at 10 PM
             schedule.every().day.at("22:00").do(lambda: asyncio.create_task(self.send_daily_summary()))
@@ -400,8 +418,8 @@ class EncarMonitorAPI:
 =========================
 📅 Started at: {self.start_time.strftime('%Y-%m-%d %H:%M:%S')}
 ⏰ Check interval: Every {interval_minutes} minutes
-🔍 Quick scans: Every 5 minutes
-📊 Daily summary: 22:00 (10 PM)
+🔍 Quick scans: Every {quick_scan_interval} minutes
+📊 Daily summary: 22:00
 🔒 Closure scans: Every 6 hours
 🧹 Weekly cleanup: Sundays at 02:00
 
@@ -413,6 +431,18 @@ System is now monitoring for new GLE Coupe listings! 🚗"""
             while self.running:
                 schedule.run_pending()
                 await asyncio.sleep(30)  # Check every 30 seconds
+
+            # Send shutdown notification to Telegram
+            shutdown_msg = f"""🛑 Encar Monitor Stopped
+========================
+📅 Stopped at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+⏱️ Runtime: {datetime.now() - self.start_time if self.start_time else 'Unknown'}
+📊 Total checks performed: {self.check_count}
+🆕 New listings found: {self.new_listings_found}
+
+Monitor has been shut down."""
+            
+            self.notifier.send_monitoring_status("STOPPED", shutdown_msg, send_to_telegram=True)
                 
         except Exception as e:
             self.logger.error(f"❌ Error in monitoring system: {e}")
@@ -429,18 +459,6 @@ The monitoring system encountered a critical error and may need attention."""
         finally:
             await self.cleanup_scraper()
             self.logger.info("🛑 Monitor stopped")
-            
-            # Send shutdown notification to Telegram
-            shutdown_msg = f"""🛑 Encar Monitor Stopped
-========================
-📅 Stopped at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-⏱️ Runtime: {datetime.now() - self.start_time if self.start_time else 'Unknown'}
-📊 Total checks performed: {self.check_count}
-🆕 New listings found: {self.new_listings_found}
-
-Monitor has been shut down."""
-            
-            self.notifier.send_monitoring_status("STOPPED", shutdown_msg, send_to_telegram=True)
     
     async def send_daily_summary(self):
         """Send daily summary of activity"""
