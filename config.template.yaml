@@ -1,0 +1,119 @@
+# Encar Monitoring Configuration Template
+# Copy this file to config.yaml for deployment
+# Sensitive values will be loaded from environment variables
+
+# Search Parameters
+search:
+  base_url: "http://www.encar.com/fc/fc_carsearchlist.do"
+  car_type: "for"
+  manufacturer: "벤츠"  # Mercedes-Benz in Korean
+  model_group: "GLE-클래스"
+  year_range: "202100.."  # 2021 and newer
+  price_range: "..9000"  # Up to 90 million KRW
+  sort: "ModifiedDate"  # Sort by most recent
+  limit: 20  # Results per page
+
+# "New" Listing Criteria (updated architecture)
+new_listing_criteria:
+  # Primary: Not in database (first time seen)
+  primary_check: "not_in_database"
+  
+  # Secondary: Recent registration date (days from today)
+  max_registration_age_days: ${MAX_REGISTRATION_AGE_DAYS}  # Consider "new" if registered within 30 days
+  
+  # Tertiary: Low view count (indicates fresh listing)
+  max_views_for_new: ${MAX_VIEWS_FOR_NEW}  # Low traffic = recent listing
+  
+  # Immediate alerts: Very fresh listings
+  immediate_alert_max_views: ${IMMEDIATE_ALERT_MAX_VIEWS}  # Very low views = very recent
+
+# Filtering Criteria
+filters:
+  model_keywords:
+    - "쿠페"  # Coupe in Korean
+  exclude_keywords:
+    - "사고차"  # Accident vehicle
+    - "침수차"  # Flood damage
+
+# Smart Monitoring Settings
+monitoring:
+  # Dynamic pagination strategy
+  pagination_strategy: "smart"  # Options: "fixed", "smart", "adaptive"
+  
+  # Initial population settings
+  initial_scan:
+    max_pages: 40  # Reduced from 20 - smarter limit
+    target_coverage: 0.8  # Cover 80% of available listings
+    min_pages: 5  # Always scan at least 5 pages
+  
+  # Regular monitoring settings  
+  regular_scan:
+    base_pages: 5  # Reduced from 10 - focus on recent listings
+    adaptive_increase: true  # Increase if finding many new listings
+    max_adaptive_pages: 8  # Cap for adaptive increases
+    
+  # Performance settings
+  check_interval_minutes: ${CHECK_INTERVAL_MINUTES}  # How often to check for new listings
+  quick_scan_interval_minutes: ${QUICK_SCAN_INTERVAL_MINUTES}  # How often to check for new listings
+  notification_threshold: 5  # Send notification if views < this number
+  
+  # Smart features
+  total_count_check: true  # Get total count to optimize page limits
+  coupe_detection_method: "keyword"  # Use "쿠페" keyword detection
+  parallel_processing: false  # Future: enable for API calls
+
+# API Integration (Future)
+api_integration:
+  enabled: false  # Will enable when authentication is solved
+  endpoints:
+    general: "https://api.encar.com/search/car/list/general"
+    premium: "https://api.encar.com/search/car/list/premium"
+  fallback_to_browser: true  # Use browser if API fails
+
+# Database Settings
+database:
+  filename: "encar_listings.db"
+  backup_days: 30  # Keep data for 30 days
+  
+  # Track listing lifecycle
+  track_price_changes: true
+  track_view_history: true
+
+# Notification Settings
+notifications:
+  enabled: true
+  methods:
+    - console  # Print to console
+    - file     # Save to log file
+    - telegram # Send to Telegram bot
+  log_file: "encar_alerts.log"
+  
+  # Telegram Bot Configuration
+  # NOTE: Sensitive values loaded from environment variables
+  telegram:
+    enabled: true
+    bot_token: "${TELEGRAM_BOT_TOKEN}"      # From environment variable
+    chat_id: "${TELEGRAM_CHAT_ID}"          # From environment variable
+    
+    # Message formatting
+    parse_mode: "HTML"  # HTML or Markdown
+    disable_web_page_preview: false
+    
+    # Rate limiting
+    max_messages_per_minute: 20
+    message_timeout: 30  # seconds
+  
+  # Different alert levels
+  immediate_alert: true      # For very fresh listings
+  daily_summary: true        # Summary of all new findings
+  price_change_alert: false  # Alert on price changes (future feature)
+
+# Browser Settings
+browser:
+  headless: ${BROWSER_HEADLESS}
+  wait_time: ${BROWSER_WAIT_TIME}  # Seconds to wait for page load
+  timeout: ${BROWSER_TIMEOUT}   # Page load timeout
+  
+  # Performance settings
+  delay_between_requests: 2  # Seconds between page requests
+  delay_between_details: 1   # Seconds between detail page requests

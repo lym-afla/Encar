@@ -1,0 +1,41 @@
+[Unit]
+Description=Encar Monitor Service
+Documentation=https://github.com/lym-afla/Encar
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/encar-monitor
+Environment=PATH=/opt/encar-monitor/venv/bin
+EnvironmentFile=/opt/encar-monitor/.env
+
+# Main service command
+ExecStart=/opt/encar-monitor/venv/bin/python encar_monitor_api.py
+
+# Service management
+Restart=always
+RestartSec=10
+StartLimitBurst=3
+StartLimitInterval=60
+
+# Resource limits
+TimeoutStartSec=120
+TimeoutStopSec=30
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=encar-monitor
+
+# Security
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/encar-monitor/logs /opt/encar-monitor/data
+
+[Install]
+WantedBy=multi-user.target

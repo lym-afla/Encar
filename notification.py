@@ -6,12 +6,25 @@ from typing import List, Dict
 import yaml
 import time
 import html
+import os
+import re
+from dotenv import load_dotenv
 
 class NotificationManager:
     def __init__(self, config_path: str = "config.yaml"):
         """Initialize notification manager with configuration."""
+        # Load environment variables first
+        load_dotenv()
+        
+        # Read config file
         with open(config_path, 'r', encoding='utf-8') as f:
-            self.config = yaml.safe_load(f)
+            config_content = f.read()
+        
+        # Replace environment variable placeholders
+        config_content = self._substitute_env_vars(config_content)
+        
+        # Parse the config
+        self.config = yaml.safe_load(config_content)
         
         self.notification_config = self.config['notifications']
         
@@ -22,6 +35,20 @@ class NotificationManager:
         # Initialize Telegram rate limiting
         self.telegram_message_times = []
         self.last_telegram_error = None
+
+    def _substitute_env_vars(self, config_content: str) -> str:
+        """Replace ${VARIABLE_NAME} placeholders with environment variables."""
+        def replace_var(match):
+            var_name = match.group(1)
+            env_value = os.getenv(var_name)
+            if env_value is None:
+                print(f"Warning: Environment variable {var_name} not found, keeping placeholder")
+                return match.group(0)  # Return original placeholder
+            return env_value
+        
+        # Pattern to match ${VARIABLE_NAME}
+        pattern = r'\$\{([A-Z_][A-Z0-9_]*)\}'
+        return re.sub(pattern, replace_var, config_content)
     
     def setup_file_logging(self):
         """Set up file logging for notifications."""
