@@ -11,8 +11,11 @@ import yaml
 import signal
 import sys
 import io
+import os
+import re
 from datetime import datetime, timedelta
 from typing import Dict
+from dotenv import load_dotenv
 from encar_scraper_api import EncarScraperAPI
 from data_storage import EncarDatabase
 from notification import NotificationManager
@@ -21,8 +24,11 @@ from closure_scanner import ClosureScanner
 class EncarMonitorAPI:
     def __init__(self, config_path: str = "config.yaml"):
         """Initialize the API-based monitoring system"""
-        with open(config_path, 'r', encoding='utf-8') as f:
-            self.config = yaml.safe_load(f)
+        # Load environment variables first
+        load_dotenv()
+        
+        # Load and process config with environment variable substitution
+        self.config = self._load_config_with_env_substitution(config_path)
         
         # Set up logging
         # Configure console output encoding for Windows
@@ -61,6 +67,60 @@ class EncarMonitorAPI:
         # Set up signal handlers for graceful shutdown
         signal.signal(signal.SIGINT, self.signal_handler)
         signal.signal(signal.SIGTERM, self.signal_handler)
+        
+    def _load_config_with_env_substitution(self, config_path: str) -> Dict:
+        """Load config file with environment variable substitution"""
+        try:
+            # Read config file
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config_content = f.read()
+            
+            # Replace environment variable placeholders
+            config_content = self._substitute_env_vars(config_content)
+            
+            # Parse the config
+            config = yaml.safe_load(config_content)
+            
+            # Ensure numeric values are properly typed
+            if 'monitoring' in config:
+                monitoring = config['monitoring']
+                # Convert string interval values to integers
+                if 'check_interval_minutes' in monitoring:
+                    monitoring['check_interval_minutes'] = int(monitoring['check_interval_minutes'])
+                if 'quick_scan_interval_minutes' in monitoring:
+                    monitoring['quick_scan_interval_minutes'] = int(monitoring['quick_scan_interval_minutes'])
+            
+            return config
+            
+        except Exception as e:
+            self.logger.error(f"Error loading config: {e}")
+            # Return a minimal config to prevent crash
+            return {
+                'monitoring': {
+                    'check_interval_minutes': 15,
+                    'quick_scan_interval_minutes': 5
+                },
+                'database': {'filename': 'data/encar_listings.db'},
+                'browser': {'headless': True}
+            }
+    
+    def _substitute_env_vars(self, config_content: str) -> str:
+        """Replace ${VARIABLE_NAME} placeholders with environment variables."""
+        def replace_var(match):
+            var_name = match.group(1)
+            env_value = os.getenv(var_name)
+            if env_value is None:
+                # For production, use defaults if env var not found
+                defaults = {
+                    'CHECK_INTERVAL_MINUTES': '15',
+                    'QUICK_SCAN_INTERVAL_MINUTES': '5'
+                }
+                return defaults.get(var_name, match.group(0))
+            return env_value
+        
+        # Pattern to match ${VARIABLE_NAME}
+        pattern = r'\$\{([A-Z_][A-Z0-9_]*)\}'
+        return re.sub(pattern, replace_var, config_content)
     
     def signal_handler(self, signum, frame):
         """Handle shutdown signals gracefully"""

@@ -278,15 +278,43 @@ python -c "import yaml; yaml.safe_load(open('config.yaml'))"
 cd /opt/encar-monitor && source venv/bin/activate && python -c "from dotenv import load_dotenv; load_dotenv(); import os; print(os.getenv('TELEGRAM_BOT_TOKEN'))"
 ```
 
-#### **Telegram Not Working**
+#### **Telegram Notifications Not Working**
+
+If startup notifications aren't arriving on production:
+
 ```bash
-# Test bot token
+# Quick test - run comprehensive Telegram debugging
+cd /opt/encar-monitor
+python debug_telegram_production.py
+
+# Manual tests
+# 1. Test bot token
 curl -X GET "https://api.telegram.org/bot<YOUR_TOKEN>/getMe"
 
-# Test message sending
+# 2. Test message sending
 curl -X POST "https://api.telegram.org/bot<YOUR_TOKEN>/sendMessage" \
      -d "chat_id=<YOUR_CHAT_ID>&text=Test message"
+
+# 3. Check environment variables in service context
+sudo systemctl show encar-monitor | grep -E 'TELEGRAM|Environment'
+
+# 4. Test notification system manually
+source venv/bin/activate
+python -c "
+from notification import NotificationManager
+nm = NotificationManager()
+nm.send_monitoring_status('TEST', 'Manual test from production', send_to_telegram=True)
+"
+
+# 5. Check service logs for telegram errors
+sudo journalctl -u encar-monitor -f | grep -i telegram
 ```
+
+**Common Issues:**
+- Environment variables not loaded in systemd context
+- Bot token or chat ID incorrect in production `.env` file  
+- Network connectivity issues from server
+- Telegram API rate limiting
 
 #### **Browser Issues**
 ```bash
@@ -297,17 +325,67 @@ sudo apt install -y chromium-browser chromium-chromedriver
 cd /opt/encar-monitor
 source venv/bin/activate
 playwright install chromium
+playwright install chromium-headless-shell
+```
+
+#### **Playwright Headless Shell Issues (Systemd Services)**
+
+If the service fails with "Executable doesn't exist at .../headless_shell":
+
+```bash
+# Install headless shell specifically for systemd services
+cd /opt/encar-monitor
+source venv/bin/activate
+
+# Install OS dependencies
+sudo /opt/encar-monitor/venv/bin/playwright install-deps
+
+# Install headless shell to app-local directory
+PLAYWRIGHT_BROWSERS_PATH=/opt/encar-monitor/ms-playwright playwright install chromium-headless-shell
+
+# Create required directories
+sudo mkdir -p /opt/encar-monitor/.cache /opt/encar-monitor/ms-playwright
+sudo chown -R user1:user1 /opt/encar-monitor  # Replace user1 with your actual user
+
+# Update systemd service to use app-local browsers
+sudo nano /etc/systemd/system/encar-monitor.service
+```
+
+Add these environment variables to the service file:
+```ini
+[Service]
+# ... existing settings ...
+Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/encar-monitor/ms-playwright
+Environment=XDG_CACHE_HOME=/opt/encar-monitor/.cache
+Environment=PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true
+
+# Update ReadWritePaths to include browser directories
+ReadWritePaths=/opt/encar-monitor/logs /opt/encar-monitor/data /opt/encar-monitor/ms-playwright /opt/encar-monitor/.cache
+```
+
+Then reload and restart:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart encar-monitor
+
+# Verify environment is set
+systemctl show encar-monitor | grep -E 'PLAYWRIGHT|XDG_CACHE_HOME'
+
+# Verify binary exists
+find /opt/encar-monitor/ms-playwright -name headless_shell -type f
 ```
 
 #### **Permission Issues**
 ```bash
-# Fix ownership
+# Fix ownership (replace ubuntu with your actual user)
 sudo chown -R ubuntu:ubuntu /opt/encar-monitor
 
 # Fix permissions
 chmod 600 /opt/encar-monitor/.env
 chmod 755 /opt/encar-monitor/logs
 chmod 755 /opt/encar-monitor/data
+chmod 755 /opt/encar-monitor/ms-playwright
+chmod 755 /opt/encar-monitor/.cache
 ```
 
 ### **Performance Optimization**
