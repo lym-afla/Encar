@@ -9,8 +9,7 @@ import asyncio
 import logging
 import yaml
 import sqlite3
-from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict
 import sys
 import os
 
@@ -24,7 +23,7 @@ class OmissionScanner:
     def __init__(self, config: dict):
         self.config = config
         self.logger = logging.getLogger(__name__)
-        self.db = EncarDatabase()
+        self.db = EncarDatabase(self.config["database"]["filename"])
         
     def scan_for_omissions(self) -> List[Dict]:
         """Scan database for listings with missing data"""
