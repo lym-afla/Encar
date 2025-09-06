@@ -10,7 +10,10 @@ class EncarDatabase:
         """Initialize database connection and create tables if needed."""
         self.db_path = db_path
         self.logger = logging.getLogger(__name__)
-        self.init_database()
+    
+    def get_connection(self):
+        """Get a database connection for manual queries"""
+        return sqlite3.connect(self.db_path)
         
     def init_database(self):
         """Create tables if they don't exist."""
@@ -238,9 +241,18 @@ class EncarDatabase:
                 cursor = conn.cursor()
                 
                 # Check if listing already exists
-                cursor.execute("SELECT id, views, price FROM listings WHERE car_id = ?", 
+                cursor.execute("SELECT id, views, registration_date, days_since_registration, price FROM listings WHERE car_id = ?", 
                              (listing_data['car_id'],))
-                existing = cursor.fetchone()
+                row = cursor.fetchone()
+                existing = None
+                if row:
+                    existing = {
+                        'id': row[0],
+                        'views': row[1], 
+                        'registration_date': row[2],
+                        'days_since_registration': row[3],
+                        'price': row[4]
+                    }
                 
                 # Parse additional data
                 days_since_reg = self.calculate_days_since_registration(listing_data.get('registration_date', ''))
@@ -277,6 +289,25 @@ class EncarDatabase:
                     is_truly_new = self.is_truly_new_listing(listing_data, config)
                 
                 if existing:
+                    # Check if this is an API-only update (no browser data)
+                    is_api_only_update = (
+                        listing_data.get('api_source', False) and 
+                        listing_data.get('views', 0) == 0 and 
+                        not listing_data.get('registration_date')
+                    )
+                    
+                    if is_api_only_update and (existing['views'] > 0 or existing['registration_date']):
+                        # Preserve existing browser-extracted data
+                        self.logger.debug(f"Preserving browser data for {listing_data['car_id']}: views={existing['views']}, reg_date={existing['registration_date']}")
+                        preserve_views = existing['views']
+                        preserve_registration_date = existing['registration_date']
+                        preserve_days_since_reg = existing['days_since_registration']
+                    else:
+                        # Use new data (normal browser update or first-time data)
+                        preserve_views = listing_data['views']
+                        preserve_registration_date = listing_data['registration_date']
+                        preserve_days_since_reg = days_since_reg
+                    
                     # Update existing listing
                     cursor.execute('''
                         UPDATE listings SET 
@@ -284,16 +315,16 @@ class EncarDatabase:
                             views = ?, registration_date = ?, listing_url = ?, 
                             last_updated = CURRENT_TIMESTAMP, 
                             is_coupe = ?, days_since_registration = ?,
-                                                                      is_lease = ?, true_price = ?, lease_deposit = ?, 
-                                          lease_monthly_payment = ?, lease_term_months = ?, 
-                                          lease_total_monthly_cost = ?, final_payment = ?
-                                      WHERE car_id = ?
+                            is_lease = ?, true_price = ?, lease_deposit = ?, 
+                            lease_monthly_payment = ?, lease_term_months = ?, 
+                            lease_total_monthly_cost = ?, final_payment = ?
+                        WHERE car_id = ?
                     ''', (
                         listing_data['title'], listing_data['model'], 
                         listing_data['year'], db_price,  # Use mapped price
-                        listing_data['mileage'], listing_data['views'],
-                        listing_data['registration_date'], listing_data['listing_url'],
-                        listing_data['is_coupe'], days_since_reg,
+                        listing_data['mileage'], preserve_views,
+                        preserve_registration_date, listing_data['listing_url'],
+                        listing_data['is_coupe'], preserve_days_since_reg,
                         is_lease, db_true_price, lease_deposit,  # Use mapped true_price
                         lease_monthly_payment, lease_term_months,
                         lease_total_monthly_cost, final_payment,

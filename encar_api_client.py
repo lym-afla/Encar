@@ -301,10 +301,10 @@ class EncarAPIClient:
             headers = self.session_headers.copy()
             headers['Cookie'] = cookie_string
             
-            self.logger.info(f"API Request: {endpoint}")
-            self.logger.info(f"   Parameters: {params}")
-            self.logger.info(f"   Headers count: {len(headers)}")
-            self.logger.info(f"   Cookies count: {len(self.session_cookies)}")
+            self.logger.debug(f"API Request: {endpoint}")
+            self.logger.debug(f"   Parameters: {params}")
+            self.logger.debug(f"   Headers count: {len(headers)}")
+            self.logger.debug(f"   Cookies count: {len(self.session_cookies)}")
             
             async with self.http_session.get(
                 endpoint,
@@ -318,7 +318,7 @@ class EncarAPIClient:
                 
                 if response.status == 200:
                     data = await response.json()
-                    self.logger.info(f"   Success! Response keys: {list(data.keys()) if isinstance(data, dict) else 'Not dict'}")
+                    self.logger.debug(f"   Success! Response keys: {list(data.keys()) if isinstance(data, dict) else 'Not dict'}")
                     return data
                     
                 elif response.status == 407:

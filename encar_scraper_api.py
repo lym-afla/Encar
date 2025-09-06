@@ -77,7 +77,7 @@ class EncarScraperAPI:
     async def scrape_with_filters(self, filters: dict, max_pages: int = 5) -> List[Dict]:
         """Scrape with specific filtering criteria"""
         try:
-            self.logger.info(f"Scraping with filters: {filters}")
+            self.logger.debug(f"Scraping with filters: {filters}")
             
             all_listings = []
             total_count = 0
