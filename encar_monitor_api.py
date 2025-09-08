@@ -513,8 +513,20 @@ System is now monitoring for new GLE Coupe listings! 🚗"""
             self.notifier.send_monitoring_status("STARTED", startup_msg, send_to_telegram=True)
             
             # Main monitoring loop
+            self.logger.info("🔄 Starting main scheduling loop...")
+            loop_count = 0
             while self.running:
+                # Run any pending scheduled tasks
                 schedule.run_pending()
+                
+                # Log scheduled tasks status every 10 minutes for debugging
+                loop_count += 1
+                if loop_count % 20 == 0:  # Every 20 loops (10 minutes)
+                    jobs = schedule.jobs
+                    self.logger.debug(f"📅 Active scheduled jobs: {len(jobs)}")
+                    for job in jobs:
+                        self.logger.debug(f"  - Next run: {job.next_run} | Job: {job.job}")
+                
                 await asyncio.sleep(30)  # Check every 30 seconds
 
             # Send shutdown notification to Telegram
@@ -548,6 +560,8 @@ The monitoring system encountered a critical error and may need attention."""
     async def send_daily_summary(self):
         """Send daily summary of activity"""
         try:
+            self.logger.info("📊 Executing scheduled daily summary...")
+            
             # Get recent stats
             stats = self.database.get_statistics()
             closure_stats = self.database.get_closure_statistics()
@@ -575,15 +589,18 @@ System running since: {self.start_time.strftime('%Y-%m-%d %H:%M:%S') if self.sta
             
             # Send via all notification methods including Telegram
             self.notifier.send_monitoring_status("Daily Summary", summary_msg, send_to_telegram=True)
-            self.logger.info("📧 Daily summary sent")
+            self.logger.info("✅ Daily summary sent successfully")
             
         except Exception as e:
             self.logger.error(f"❌ Error sending daily summary: {e}")
+            # Send error notification to Telegram
+            error_msg = f"❌ Daily summary failed at {datetime.now().strftime('%H:%M:%S')}: {str(e)}"
+            self.notifier.send_monitoring_status("Daily Summary Error", error_msg, send_to_telegram=True)
     
     async def run_closure_scan(self):
         """Run closure detection scan on older listings"""
         try:
-            self.logger.info("🔍 Starting scheduled closure scan...")
+            self.logger.info("🔍 Executing scheduled closure scan...")
             
             # Scan listings older than 3 days, limit to 50 per scan
             results = await self.closure_scanner.scan_listings_for_closure(
@@ -591,31 +608,73 @@ System running since: {self.start_time.strftime('%Y-%m-%d %H:%M:%S') if self.sta
                 max_age_days=3
             )
             
-            if results['closed_found'] > 0:
-                # Send notification if closed listings were found
-                msg = f"""🔒 Closure Scan Results
+            # Always send notification about closure scan results
+            msg = f"""🔒 Closure Scan Results
 =====================
 📊 Checked: {results['total_checked']} listings
 🔒 Closed found: {results['closed_found']}
 ✅ Still active: {results['still_active']}
-❌ Errors: {results['errors']}"""
-                self.notifier.send_monitoring_status("Closure Scan", msg, send_to_telegram=True)
+❌ Errors: {results['errors']}
+🕐 Scan time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
+            
+            # Send notification to Telegram (always, regardless of results)
+            self.notifier.send_monitoring_status("Closure Scan", msg, send_to_telegram=True)
                 
-            self.logger.info(f"🔍 Closure scan completed: {results['closed_found']} closed listings found")
+            self.logger.info(f"✅ Closure scan completed: {results['closed_found']} closed listings found")
             
         except Exception as e:
             self.logger.error(f"❌ Error during closure scan: {e}")
+            # Send error notification to Telegram
+            error_msg = f"❌ Closure scan failed at {datetime.now().strftime('%H:%M:%S')}: {str(e)}"
+            self.notifier.send_monitoring_status("Closure Scan Error", error_msg, send_to_telegram=True)
     
     async def cleanup_old_data(self):
         """Clean up old data from database"""
         try:
+            self.logger.info("🧹 Executing scheduled weekly cleanup...")
+            
             days_to_keep = self.config['database']['backup_days']
             removed_count = self.database.cleanup_old_listings(days_to_keep)
             
-            self.logger.info(f"🧹 Cleanup completed: removed {removed_count} old listings")
+            # Send Telegram notification about cleanup
+            cleanup_msg = f"""🧹 Weekly Database Cleanup
+==========================
+📊 Removed listings older than {days_to_keep} days
+🗑️ Records deleted: {removed_count}
+🕐 Cleanup time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+Database maintenance completed successfully."""
+            
+            self.notifier.send_monitoring_status("Weekly Cleanup", cleanup_msg, send_to_telegram=True)
+            self.logger.info(f"✅ Cleanup completed: removed {removed_count} old listings")
             
         except Exception as e:
             self.logger.error(f"❌ Error during cleanup: {e}")
+            # Send error notification to Telegram
+            error_msg = f"❌ Weekly cleanup failed at {datetime.now().strftime('%H:%M:%S')}: {str(e)}"
+            self.notifier.send_monitoring_status("Weekly Cleanup Error", error_msg, send_to_telegram=True)
+
+    async def test_scheduled_tasks(self):
+        """Test all scheduled tasks manually"""
+        self.logger.info("🧪 Testing all scheduled tasks...")
+        
+        try:
+            # Test daily summary
+            self.logger.info("Testing daily summary...")
+            await self.send_daily_summary()
+            
+            # Test closure scan
+            self.logger.info("Testing closure scan...")
+            await self.run_closure_scan()
+            
+            # Test weekly cleanup
+            self.logger.info("Testing weekly cleanup...")
+            await self.cleanup_old_data()
+            
+            self.logger.info("✅ All scheduled tasks tested successfully")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error testing scheduled tasks: {e}")
 
 
 async def test_api_monitor():
@@ -654,7 +713,7 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description='Encar API Monitor')
-    parser.add_argument('--mode', choices=['start', 'test', 'status', 'closure'], default='start',
+    parser.add_argument('--mode', choices=['start', 'test', 'status', 'closure', 'test-schedule'], default='start',
                        help='Operation mode')
     parser.add_argument('--config', default='config.yaml',
                        help='Configuration file path')
@@ -684,6 +743,13 @@ def main():
             print(f"   - Errors: {results['errors']}")
         
         asyncio.run(run_closure())
+    elif args.mode == 'test-schedule':
+        # Test scheduled tasks
+        async def test_scheduled():
+            monitor = EncarMonitorAPI(args.config)
+            await monitor.test_scheduled_tasks()
+        
+        asyncio.run(test_scheduled())
     else:  # start
         monitor = EncarMonitorAPI(args.config)
         if args.quick:
