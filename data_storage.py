@@ -1074,3 +1074,90 @@ class EncarDatabase:
             
             print(f"      🔗 https://fem.encar.com/cars/detail/{vehicle['car_id']}")
             print()
+
+    def get_recent_listings(self, hours: int = 24) -> List[Dict]:
+        """Get listings added in the last N hours"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Calculate the cutoff time
+                cutoff_time = datetime.now() - timedelta(hours=hours)
+                cutoff_str = cutoff_time.strftime('%Y-%m-%d %H:%M:%S')
+                
+                cursor.execute('''
+                    SELECT car_id, title, model, year, price, mileage, views, 
+                           registration_date, listing_url, first_seen, is_coupe, is_lease
+                    FROM listings 
+                    WHERE first_seen >= ?
+                    ORDER BY first_seen DESC
+                ''', (cutoff_str,))
+                
+                rows = cursor.fetchall()
+                listings = []
+                
+                for row in rows:
+                    listing = {
+                        'car_id': row[0],
+                        'title': row[1],
+                        'model': row[2],
+                        'year': row[3],
+                        'price': row[4],
+                        'mileage': row[5],
+                        'views': row[6],
+                        'registration_date': row[7],
+                        'listing_url': row[8],
+                        'first_seen': row[9],
+                        'is_coupe': bool(row[10]),
+                        'is_lease': bool(row[11])
+                    }
+                    listings.append(listing)
+                
+                self.logger.debug(f"Found {len(listings)} listings in last {hours} hours")
+                return listings
+                
+        except sqlite3.Error as e:
+            self.logger.error(f"Database error getting recent listings: {e}")
+            return []
+        except Exception as e:
+            self.logger.error(f"Error getting recent listings: {e}")
+            return []
+
+    def cleanup_old_listings(self, days_to_keep: int = 90) -> int:
+        """Remove listings older than specified days"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Calculate cutoff date
+                cutoff_date = datetime.now() - timedelta(days=days_to_keep)
+                cutoff_str = cutoff_date.strftime('%Y-%m-%d %H:%M:%S')
+                
+                # Count records to be deleted
+                cursor.execute('''
+                    SELECT COUNT(*) FROM listings 
+                    WHERE first_seen < ?
+                ''', (cutoff_str,))
+                
+                count_to_delete = cursor.fetchone()[0]
+                
+                if count_to_delete > 0:
+                    # Delete old records
+                    cursor.execute('''
+                        DELETE FROM listings 
+                        WHERE first_seen < ?
+                    ''', (cutoff_str,))
+                    
+                    conn.commit()
+                    self.logger.info(f"Cleaned up {count_to_delete} old listings (older than {days_to_keep} days)")
+                else:
+                    self.logger.info("No old listings to clean up")
+                
+                return count_to_delete
+                
+        except sqlite3.Error as e:
+            self.logger.error(f"Database error during cleanup: {e}")
+            return 0
+        except Exception as e:
+            self.logger.error(f"Error during cleanup: {e}")
+            return 0

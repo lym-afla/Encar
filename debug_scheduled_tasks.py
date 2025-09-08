@@ -39,7 +39,9 @@ async def debug_all_tasks():
         jobs = schedule.jobs
         print(f"📅 Total scheduled jobs: {len(jobs)}")
         for i, job in enumerate(jobs, 1):
-            print(f"  {i}. Next run: {job.next_run} | Function: {job.job}")
+            # Fix for schedule library API - use job.job_func instead of job.job
+            func_name = getattr(job.job_func, '__name__', str(job.job_func))
+            print(f"  {i}. Next run: {job.next_run} | Function: {func_name}")
         
         print("\n2️⃣ TESTING TELEGRAM NOTIFICATIONS")
         print("-" * 30)
@@ -72,7 +74,8 @@ async def debug_all_tasks():
             time_until = job.next_run - now
             hours = int(time_until.total_seconds() / 3600)
             minutes = int((time_until.total_seconds() % 3600) / 60)
-            print(f"⏰ Next '{job.job}' in: {hours}h {minutes}m ({job.next_run.strftime('%Y-%m-%d %H:%M:%S')})")
+            func_name = getattr(job.job_func, '__name__', str(job.job_func))
+            print(f"⏰ Next '{func_name}' in: {hours}h {minutes}m ({job.next_run.strftime('%Y-%m-%d %H:%M:%S')})")
         
         print("\n5️⃣ RECOMMENDATIONS")
         print("-" * 30)

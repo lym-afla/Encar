@@ -525,7 +525,8 @@ System is now monitoring for new GLE Coupe listings! 🚗"""
                     jobs = schedule.jobs
                     self.logger.debug(f"📅 Active scheduled jobs: {len(jobs)}")
                     for job in jobs:
-                        self.logger.debug(f"  - Next run: {job.next_run} | Job: {job.job}")
+                        func_name = getattr(job.job_func, '__name__', str(job.job_func))
+                        self.logger.debug(f"  - Next run: {job.next_run} | Job: {func_name}")
                 
                 await asyncio.sleep(30)  # Check every 30 seconds
 
