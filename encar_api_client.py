@@ -35,6 +35,10 @@ class EncarAPIClient:
         
     async def __aenter__(self):
         """Async context manager entry"""
+        # Close existing session if it exists
+        if self.http_session and not self.http_session.closed:
+            await self.http_session.close()
+        
         # Create session with better connector configuration
         connector = aiohttp.TCPConnector(
             limit=100,
@@ -53,10 +57,19 @@ class EncarAPIClient:
         
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit"""
-        if self.http_session:
+        if self.http_session and not self.http_session.closed:
             await self.http_session.close()
+            self.http_session = None
         if self.auth_browser:
             await self.auth_browser.close()
+            self.auth_browser = None
+    
+    async def cleanup_sessions(self):
+        """Manually cleanup any unclosed sessions"""
+        if self.http_session and not self.http_session.closed:
+            self.logger.debug("Cleaning up HTTP session")
+            await self.http_session.close()
+            self.http_session = None
     
     async def extract_authentication(self) -> bool:
         """Extract authentication tokens from browser session"""
@@ -305,6 +318,11 @@ class EncarAPIClient:
             self.logger.debug(f"   Parameters: {params}")
             self.logger.debug(f"   Headers count: {len(headers)}")
             self.logger.debug(f"   Cookies count: {len(self.session_cookies)}")
+            
+            # Ensure session exists and is not closed
+            if not self.http_session or self.http_session.closed:
+                self.logger.warning("HTTP session is closed, recreating...")
+                await self.__aenter__()  # Recreate session
             
             async with self.http_session.get(
                 endpoint,

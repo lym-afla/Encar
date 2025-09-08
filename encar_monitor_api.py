@@ -149,9 +149,22 @@ class EncarMonitorAPI:
         """Clean up the scraper"""
         if self.scraper:
             try:
+                # Ensure the API client session is properly closed
+                if hasattr(self.scraper, 'api_client') and self.scraper.api_client:
+                    await self.scraper.api_client.cleanup_sessions()
+                            
                 await self.scraper.__aexit__(None, None, None)
             except Exception as e:
                 self.logger.warning(f"⚠️ Error during scraper cleanup: {e}")
+    
+    async def cleanup_scraper_sessions(self):
+        """Clean up any unclosed sessions in the API client"""
+        try:
+            if self.scraper and hasattr(self.scraper, 'api_client') and self.scraper.api_client:
+                await self.scraper.api_client.cleanup_sessions()
+                self.logger.debug("🧹 Session cleanup completed")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error during session cleanup: {e}")
     
     async def run_monitoring_cycle(self):
         """Run a single monitoring cycle with API-based approach"""
@@ -179,6 +192,10 @@ class EncarMonitorAPI:
             
             self.last_check = datetime.now()
             self.logger.info(f"✅ Monitoring cycle completed in {scan_time:.1f}s")
+            
+            # Periodic session cleanup to prevent unclosed sessions
+            if self.check_count % 10 == 0:  # Every 10 cycles
+                await self.cleanup_scraper_sessions()
             
         except Exception as e:
             self.logger.error(f"❌ Error in monitoring cycle: {e}")
@@ -373,9 +390,17 @@ class EncarMonitorAPI:
                 self.logger.info(f"⚡ Quick scan: {len(listings)} listings, {new_count} new, {notifications_sent} notifications sent")
             else:
                 self.logger.info("⚡ Quick scan: no listings found")
+            
+            # Session cleanup after quick scan to prevent accumulation
+            await self.cleanup_scraper_sessions()
                 
         except Exception as e:
             self.logger.error(f"❌ Error in quick scan: {e}")
+            # Cleanup even on error
+            try:
+                await self.cleanup_scraper_sessions()
+            except:
+                pass
     
     async def get_system_status(self) -> Dict:
         """Get comprehensive system status"""
