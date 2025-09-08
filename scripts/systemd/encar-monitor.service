@@ -6,8 +6,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=ubuntu
-Group=ubuntu
+User=user1
+Group=user1
 WorkingDirectory=/opt/encar-monitor
 Environment=PATH=/opt/encar-monitor/venv/bin
 EnvironmentFile=/opt/encar-monitor/.env
@@ -30,12 +30,17 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=encar-monitor
 
+# Playwright environment for systemd services
+Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/encar-monitor/ms-playwright
+Environment=XDG_CACHE_HOME=/opt/encar-monitor/.cache
+Environment=PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true
+
 # Security
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=yes
-ReadWritePaths=/opt/encar-monitor/logs /opt/encar-monitor/data
+ReadWritePaths=/opt/encar-monitor/logs /opt/encar-monitor/data /opt/encar-monitor/ms-playwright /opt/encar-monitor/.cache
 
 [Install]
 WantedBy=multi-user.target

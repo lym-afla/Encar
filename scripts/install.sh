@@ -81,6 +81,7 @@ pip install -r requirements.txt
 # Install Playwright browsers
 print_status "Installing Playwright browsers..."
 playwright install chromium
+playwright install chromium-headless-shell
 
 # Setup configuration files
 print_status "Setting up configuration files..."

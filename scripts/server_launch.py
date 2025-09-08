@@ -138,7 +138,7 @@ def main():
             
             elif choice == '7':
                 print("🔧 Testing configuration...")
-                run_command(['python3', 'venv/bin/python', '-c', 
+                run_command(['./venv/bin/python', '-c', 
                            'import yaml; from notification import NotificationManager; '
                            'nm = NotificationManager(); print("✅ Configuration valid")'], 
                            "Configuration Test")
