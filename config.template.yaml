@@ -110,9 +110,9 @@ notifications:
 
 # Browser Settings
 browser:
-  headless: ${BROWSER_HEADLESS}
-  wait_time: ${BROWSER_WAIT_TIME}  # Seconds to wait for page load
-  timeout: ${BROWSER_TIMEOUT}   # Page load timeout
+  headless: true
+  wait_time: 3  # Seconds to wait for page load
+  timeout: 30   # Page load timeout
   
   # Performance settings
   delay_between_requests: 2  # Seconds between page requests
