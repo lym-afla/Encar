@@ -23,7 +23,20 @@ class ClosureScanner:
     def __init__(self, config: dict):
         self.config = config
         self.logger = logging.getLogger(__name__)
-        self.db = EncarDatabase()
+        # Use the same database path as the main monitor
+        db_path = config.get('database', {}).get('filename', 'encar_listings.db')
+        self.logger.info(f"Initializing database with path: {db_path}")
+        self.db = EncarDatabase(db_path)
+        
+        # Test database connection and show basic stats
+        try:
+            with self.db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM listings")
+                total_count = cursor.fetchone()[0]
+                self.logger.info(f"Database connected successfully. Total listings: {total_count}")
+        except Exception as e:
+            self.logger.error(f"Database connection test failed: {e}")
         
     async def check_listing_status(self, listing_url: str, car_id: str) -> Dict:
         """
@@ -476,6 +489,22 @@ async def main():
     
     # Create scanner
     scanner = ClosureScanner(config)
+    
+    # Debug: Show database path being used
+    db_path = config.get('database', {}).get('filename', 'encar_listings.db')
+    print(f"📁 Using database: {db_path}")
+    
+    # Check if database file exists
+    if os.path.exists(db_path):
+        file_size = os.path.getsize(db_path)
+        print(f"✅ Database file exists ({file_size:,} bytes)")
+    else:
+        print(f"❌ Database file not found: {db_path}")
+        print("🔍 Looking for database files in current directory...")
+        for file in os.listdir('.'):
+            if file.endswith('.db'):
+                print(f"   Found: {file}")
+        return
     
     if stats_only:
         print("\n📊 Closure Statistics:")
