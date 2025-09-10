@@ -126,6 +126,40 @@ class EncarMonitorAPI:
         """Handle shutdown signals gracefully"""
         self.logger.info("🛑 Shutdown signal received, stopping monitor...")
         self.running = False
+        # Note: The actual shutdown notification will be sent in start_monitoring()
+        # after the main loop exits, ensuring proper cleanup
+    
+    async def cleanup_and_shutdown(self):
+        """Perform cleanup operations before shutdown"""
+        try:
+            self.logger.info("🧹 Performing cleanup operations...")
+            
+            # Close scraper if it exists
+            if hasattr(self, 'scraper') and self.scraper:
+                try:
+                    await self.scraper.__aexit__(None, None, None)
+                    self.logger.info("✅ Scraper closed successfully")
+                except Exception as e:
+                    self.logger.error(f"❌ Error closing scraper: {e}")
+            
+            # Send shutdown notification
+            shutdown_msg = f"""🛑 Encar Monitor Stopped
+========================
+📅 Stopped at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+⏱️ Runtime: {datetime.now() - self.start_time if self.start_time else 'Unknown'}
+📊 Total checks performed: {self.check_count}
+🆕 New listings found: {self.new_listings_found}
+
+Monitor has been shut down."""
+
+            self.logger.info("📤 Sending shutdown notification...")
+            self.notifier.send_monitoring_status("STOPPED", shutdown_msg, send_to_telegram=True)
+            # Give a moment for the notification to be sent
+            await asyncio.sleep(2)
+            self.logger.info("✅ Shutdown notification sent successfully")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error during cleanup: {e}")
     
     async def initialize_scraper(self) -> bool:
         """Initialize the API-based scraper"""
@@ -507,9 +541,9 @@ class EncarMonitorAPI:
 📅 Started at: {self.start_time.strftime('%Y-%m-%d %H:%M:%S')}
 ⏰ Check interval: Every {interval_minutes} minutes
 🔍 Quick scans: Every {quick_scan_interval} minutes
-📊 Daily summary: 22:00
-🔒 Closure scans: Every 6 hours
-🧹 Weekly cleanup: Sundays at 02:00
+📊 Daily summary: {self.config['schedule']['daily_summary_time']}
+🔒 Closure scans: Every {self.config['schedule']['closure_scan_every_hours']} hours
+🧹 Weekly cleanup: Sundays at {self.config['schedule']['weekly_sunday_cleanup_time']}
 
 System is now monitoring for new GLE Coupe listings! 🚗"""
 
@@ -518,32 +552,27 @@ System is now monitoring for new GLE Coupe listings! 🚗"""
             # Main monitoring loop
             self.logger.info("🔄 Starting main scheduling loop...")
             loop_count = 0
-            while self.running:
-                # Run any pending scheduled tasks
-                schedule.run_pending()
-                
-                # Log scheduled tasks status every 10 minutes for debugging
-                loop_count += 1
-                if loop_count % 20 == 0:  # Every 20 loops (10 minutes)
-                    jobs = schedule.jobs
-                    self.logger.debug(f"📅 Active scheduled jobs: {len(jobs)}")
-                    for job in jobs:
-                        func_name = getattr(job.job_func, '__name__', str(job.job_func))
-                        self.logger.debug(f"  - Next run: {job.next_run} | Job: {func_name}")
-                
-                await asyncio.sleep(30)  # Check every 30 seconds
-
-            # Send shutdown notification to Telegram
-            shutdown_msg = f"""🛑 Encar Monitor Stopped
-========================
-📅 Stopped at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-⏱️ Runtime: {datetime.now() - self.start_time if self.start_time else 'Unknown'}
-📊 Total checks performed: {self.check_count}
-🆕 New listings found: {self.new_listings_found}
-
-Monitor has been shut down."""
-            
-            self.notifier.send_monitoring_status("STOPPED", shutdown_msg, send_to_telegram=True)
+            try:
+                while self.running:
+                    # Run any pending scheduled tasks
+                    schedule.run_pending()
+                    
+                    # Log scheduled tasks status every 10 minutes for debugging
+                    loop_count += 1
+                    if loop_count % 20 == 0:  # Every 20 loops (10 minutes)
+                        jobs = schedule.jobs
+                        self.logger.debug(f"📅 Active scheduled jobs: {len(jobs)}")
+                        for job in jobs:
+                            func_name = getattr(job.job_func, '__name__', str(job.job_func))
+                            self.logger.debug(f"  - Next run: {job.next_run} | Job: {func_name}")
+                    
+                    await asyncio.sleep(30)  # Check every 30 seconds
+            except Exception as loop_error:
+                self.logger.error(f"❌ Error in main monitoring loop: {loop_error}")
+                # Still perform cleanup even if there was an error
+            finally:
+                # Always perform cleanup and send shutdown notification
+                await self.cleanup_and_shutdown()
                 
         except Exception as e:
             self.logger.error(f"❌ Error in monitoring system: {e}")
@@ -680,6 +709,15 @@ Database maintenance completed successfully."""
             
         except Exception as e:
             self.logger.error(f"❌ Error testing scheduled tasks: {e}")
+    
+    async def test_shutdown_notification(self):
+        """Test shutdown notification without actually stopping the monitor"""
+        try:
+            self.logger.info("🧪 Testing shutdown notification...")
+            await self.cleanup_and_shutdown()
+            self.logger.info("✅ Shutdown notification test completed")
+        except Exception as e:
+            self.logger.error(f"❌ Error testing shutdown notification: {e}")
 
 
 async def test_api_monitor():
@@ -718,7 +756,7 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description='Encar API Monitor')
-    parser.add_argument('--mode', choices=['start', 'test', 'status', 'closure', 'test-schedule'], default='start',
+    parser.add_argument('--mode', choices=['start', 'test', 'status', 'closure', 'test-schedule', 'test-shutdown'], default='start',
                        help='Operation mode')
     parser.add_argument('--config', default='config.yaml',
                        help='Configuration file path')
@@ -755,6 +793,13 @@ def main():
             await monitor.test_scheduled_tasks()
         
         asyncio.run(test_scheduled())
+    elif args.mode == 'test-shutdown':
+        # Test shutdown notification
+        async def test_shutdown():
+            monitor = EncarMonitorAPI(args.config)
+            await monitor.test_shutdown_notification()
+        
+        asyncio.run(test_shutdown())
     else:  # start
         monitor = EncarMonitorAPI(args.config)
         if args.quick:
