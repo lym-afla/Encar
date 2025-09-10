@@ -11,7 +11,7 @@ import yaml
 import sys
 import os
 from datetime import datetime, timedelta
-from typing import List, Dict, Optional
+from typing import Dict
 from playwright.async_api import async_playwright
 
 # Add current directory to path for imports
@@ -25,7 +25,6 @@ class ClosureScanner:
         self.logger = logging.getLogger(__name__)
         # Use the same database path as the main monitor
         db_path = config.get('database', {}).get('filename', 'encar_listings.db')
-        self.logger.info(f"Initializing database with path: {db_path}")
         self.db = EncarDatabase(db_path)
         
         # Test database connection and show basic stats
@@ -492,7 +491,6 @@ async def main():
     
     # Debug: Show database path being used
     db_path = config.get('database', {}).get('filename', 'encar_listings.db')
-    print(f"📁 Using database: {db_path}")
     
     # Check if database file exists
     if os.path.exists(db_path):
