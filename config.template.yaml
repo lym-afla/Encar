@@ -55,7 +55,6 @@ monitoring:
   # Performance settings
   check_interval_minutes: ${CHECK_INTERVAL_MINUTES}  # How often to check for new listings
   quick_scan_interval_minutes: ${QUICK_SCAN_INTERVAL_MINUTES}  # How often to check for new listings
-  notification_threshold: 5  # Send notification if views < this number
   
   # Smart features
   total_count_check: true  # Get total count to optimize page limits
@@ -105,8 +104,17 @@ notifications:
   
   # Different alert levels
   immediate_alert: true      # For very fresh listings
-  daily_summary: true        # Summary of all new findings
   price_change_alert: false  # Alert on price changes (future feature)
+
+# Schedule settings
+schedule:
+  daily_summary: true        # Summary of all new findings
+  daily_summary_time: "22:00"
+  closure_scan: true        # Closure scan
+  closure_scan_every_hours: 6
+  weekly_cleanup: true      # Weekly cleanup
+  weekly_sunday_cleanup_time: "02:00"
+
 
 # Browser Settings
 browser:

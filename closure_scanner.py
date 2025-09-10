@@ -300,21 +300,30 @@ class ClosureScanner:
                     'still_active': 0
                 }
             
-            # Filter by age if specified
-            if max_age_days:
+            # Filter by age if specified (check listings that are AT LEAST max_age_days old)
+            if max_age_days > 0:
                 cutoff_date = datetime.now() - timedelta(days=max_age_days)
                 filtered_listings = []
+                self.logger.info(f"Filtering for listings at least {max_age_days} days old (before {cutoff_date.strftime('%Y-%m-%d %H:%M:%S')})")
+                
                 for listing in active_listings:
                     try:
                         first_seen = datetime.fromisoformat(listing['first_seen'].replace('Z', '+00:00'))
-                        if first_seen < cutoff_date:
+                        days_old = (datetime.now() - first_seen).days
+                        self.logger.debug(f"Listing {listing['car_id']}: first_seen={first_seen.strftime('%Y-%m-%d %H:%M:%S')}, days_old={days_old}")
+                        
+                        if first_seen <= cutoff_date:  # Changed from < to <=
                             filtered_listings.append(listing)
-                    except:
+                            self.logger.debug(f"  -> Included (age: {days_old} days)")
+                        else:
+                            self.logger.debug(f"  -> Excluded (age: {days_old} days, too new)")
+                    except Exception as e:
                         # If date parsing fails, include the listing
+                        self.logger.warning(f"Date parsing failed for {listing['car_id']}: {e}, including anyway")
                         filtered_listings.append(listing)
                 
                 active_listings = filtered_listings
-                self.logger.info(f"Filtered to {len(active_listings)} listings older than {max_age_days} days")
+                self.logger.info(f"Filtered to {len(active_listings)} listings at least {max_age_days} days old")
             
             # Limit number of listings if specified
             if max_listings and len(active_listings) > max_listings:
@@ -322,6 +331,15 @@ class ClosureScanner:
                 self.logger.info(f"Limited to {max_listings} listings for this scan")
             
             self.logger.info(f"Checking {len(active_listings)} active listings for closure...")
+            
+            # Show sample of listings being checked
+            if active_listings:
+                sample_size = min(3, len(active_listings))
+                self.logger.info(f"Sample of listings to check:")
+                for i, listing in enumerate(active_listings[:sample_size]):
+                    self.logger.info(f"  {i+1}. {listing['car_id']} - {listing['title'][:50]}...")
+                if len(active_listings) > sample_size:
+                    self.logger.info(f"  ... and {len(active_listings) - sample_size} more")
             
             # Scan listings
             checked = 0
@@ -449,11 +467,19 @@ async def main():
     """Main function to run the closure scanner"""
     print("🔍 Encar Closure Scanner")
     print("=" * 50)
+    print("Usage: python closure_scanner.py [options]")
+    print("Options:")
+    print("  --stats, -s           Show statistics only")
+    print("  --max-listings N, -m N  Check maximum N listings")
+    print("  --max-age N, --age N    Check listings at least N days old (default: 0 = all)")
+    print("  --all, -a              Check all listings (same as --age 0)")
+    print()
     
     # Check command line arguments
     stats_only = '--stats' in sys.argv or '-s' in sys.argv
     max_listings = None
-    max_age_days = 7
+    max_age_days = 0  # Changed default to 0 (check all listings)
+    check_all = '--all' in sys.argv or '-a' in sys.argv
     
     # Parse arguments
     for i, arg in enumerate(sys.argv):
@@ -463,7 +489,7 @@ async def main():
             except ValueError:
                 print(f"❌ Invalid max_listings value: {sys.argv[i + 1]}")
                 return
-        elif arg in ['--max-age', '-a'] and i + 1 < len(sys.argv):
+        elif arg in ['--max-age', '--age'] and i + 1 < len(sys.argv):
             try:
                 max_age_days = int(sys.argv[i + 1])
             except ValueError:
@@ -517,7 +543,10 @@ async def main():
         print(f"\n🔍 Running closure scan...")
         if max_listings:
             print(f"   - Max listings: {max_listings}")
-        print(f"   - Max age: {max_age_days} days")
+        if max_age_days > 0:
+            print(f"   - Max age: {max_age_days} days")
+        else:
+            print("   - Checking all listings (no age filter)")
         
         results = await scanner.run_closure_scan(
             max_listings=max_listings,

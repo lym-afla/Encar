@@ -487,13 +487,16 @@ class EncarMonitorAPI:
             schedule.every(quick_scan_interval).minutes.do(lambda: asyncio.create_task(self.run_quick_scan()))
             
             # Daily summary at 10 PM
-            schedule.every().day.at("22:00").do(lambda: asyncio.create_task(self.send_daily_summary()))
+            if self.config['schedule'].get('daily_summary', True):
+                schedule.every().day.at(self.config['schedule']['daily_summary_time']).do(lambda: asyncio.create_task(self.send_daily_summary()))
             
             # Closure scanning every 6 hours
-            schedule.every(6).hours.do(lambda: asyncio.create_task(self.run_closure_scan()))
+            if self.config['schedule'].get('closure_scan', True):
+                schedule.every(self.config['schedule']['closure_scan_every_hours']).hours.do(lambda: asyncio.create_task(self.run_closure_scan()))
             
             # Weekly cleanup on Sunday at 2 AM
-            schedule.every().sunday.at("02:00").do(lambda: asyncio.create_task(self.cleanup_old_data()))
+            if self.config['schedule'].get('weekly_cleanup', True):
+                schedule.every().sunday.at(self.config['schedule']['weekly_sunday_cleanup_time']).do(lambda: asyncio.create_task(self.cleanup_old_data()))
             
             self.logger.info(f"⏰ Scheduled monitoring: every {interval_minutes} minutes")
             self.logger.info("✅ Monitor started successfully!")

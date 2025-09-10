@@ -21,7 +21,6 @@ search:
 monitoring:
   check_interval_minutes: 10
   max_pages_to_scan: 5
-  notification_threshold: 5
   quick_scan_interval_minutes: 2
 
 browser:
@@ -97,7 +96,6 @@ search:
 monitoring:
   check_interval_minutes: 10  # How often to check for new listings
   max_pages_to_scan: 5  # Maximum pages to scan per cycle
-  notification_threshold: 5  # Alert if views < this number
   quick_scan_interval_minutes: 2  # Quick scan interval for urgent listings
 ```
 
