@@ -605,11 +605,12 @@ System running since: {self.start_time.strftime('%Y-%m-%d %H:%M:%S') if self.sta
         """Run closure detection scan on older listings"""
         try:
             self.logger.info("🔍 Executing scheduled closure scan...")
+            max_age_days = self.config['schedule']['closure_scan_max_age_days']
             
-            # Scan listings older than 3 days, limit to 50 per scan
+            # Scan listings older than max_age_days, limit to 50 per scan
             results = await self.closure_scanner.scan_listings_for_closure(
                 max_listings=50,
-                max_age_days=3
+                max_age_days=max_age_days
             )
             
             # Always send notification about closure scan results

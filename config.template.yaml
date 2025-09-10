@@ -112,6 +112,7 @@ schedule:
   daily_summary_time: "22:00"
   closure_scan: true        # Closure scan
   closure_scan_every_hours: 6
+  closure_scan_max_age_days: 5
   weekly_cleanup: true      # Weekly cleanup
   weekly_sunday_cleanup_time: "02:00"
 
