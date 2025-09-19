@@ -175,15 +175,17 @@ class EncarAPIClient:
     
     def build_api_query(self, filters: dict = None) -> str:
         """Build API query string with advanced filtering support"""
-        # Start with the base working query format - manufacturer and model
-        base_part = "(And.Hidden.N._.(C.CarType.N._.(C.Manufacturer.벤츠._.ModelGroup.GLE-클래스.))"
+        # More specific base query targeting GLE Coupe models directly
+        # Based on: https://www.encar.com/fc/fc_carsearchlist.do?carType=for
+        base_part = "(And.Hidden.N._.(C.CarType.N._.(C.Manufacturer.벤츠._.(C.ModelGroup.GLE-클래스._.(C.Model.GLE-클래스 W167._.(Or.(C.BadgeGroup.가솔린 4WD._.(Or.Badge.GLE450 4MATIC 쿠페._.Badge.AMG GLE53 4MATIC+ 쿠페._.Badge.AMG GLE63 S 4MATIC+ 쿠페.))_.(C.BadgeGroup.디젤 4WD._.(Or.Badge.GLE450d 4MATIC 쿠페._.Badge.GLE400d 4MATIC 쿠페.)))))))"
         
         # If no filters, return the base query that we know works
         if not filters:
             return base_part + ")"
         
         # For filtered queries, add filters OUTSIDE the CarType clause 
-        # Based on working URL format: (And.Hidden.N._.(C.CarType.N._.(C.Manufacturer.벤츠._.ModelGroup.GLE-클래스.))_.Year.range(202100..)._.Price.range(..9000).)
+        # The base query now specifically targets GLE Coupe models (W167 generation)
+        # with specific badge groups for gasoline and diesel variants
         
         # Build filter parts
         filter_parts = []
